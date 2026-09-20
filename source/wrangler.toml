@@ -2,4 +2,4 @@ name = "crush-monitor-api"
 main = "worker/index.ts"
 compatibility_date = "2026-09-01"
 [vars]
-ALLOWED_ORIGIN = "https://YOUR_USERNAME.github.io"
+ALLOWED_ORIGIN = "https://muyunyixi.github.io"

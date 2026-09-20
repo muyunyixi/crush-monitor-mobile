@@ -1,9 +1,9 @@
 # Crush Monitor Mobile
 
-基于 [Crush Monitor](https://github.com/FerryCorleone/crush-monitor) 的移动网页版本。MIT 许可。
+网页：https://muyunyixi.github.io/crush-monitor-mobile/
 
-根目录是构建后的网页；source 是完整源码。构建：进入 source 后执行 npm ci 和 npm run build，将 dist 文件复制到仓库根目录。
+支持手机粘贴微信文字。TypeSafe 不支持浏览器跨域直连，分析必须配置后端转发服务。当前仓库已包含 Cloudflare Worker 源码与部署包，但后端尚未部署。
 
-支持整段记录和单条微信文字导入。右上角设置填写自己的 TypeSafe API Key，密钥和聊天只保留在页面内存中。模型分析需联网和自备额度。好感信号分是娱乐参考，不是他人喜欢你的概率。
+完整说明见 [source/MOBILE.md](source/MOBILE.md)。网页设置中填写自己部署的服务地址和个人 Key，不要把 Key 提交到仓库。
 
-不要上传 API Key 或私人聊天。
+基于 FerryCorleone/crush-monitor，保留 MIT 许可。

@@ -5,10 +5,10 @@
 ## 最简单部署（无需安装软件）
 
 1. 在自己的 GitHub 账号新建一个公开仓库，例如 crush-monitor-mobile。
-2. 解压交付 ZIP，将 `deploy` 文件夹**里面**的 index.html、assets 文件夹、favicon.svg 和 LICENSE 上传到仓库根目录。不要把整个 ZIP 上传，也不要只上传 index.html。
+2. 解压交付 ZIP，将 `deploy` 文件夹**里面**的 index.html、favicon.svg、.nojekyll 和 LICENSE 上传到仓库根目录。不要把整个 ZIP 上传。
 3. 在仓库 Settings → Pages → Build and deployment 选择 Deploy from a branch，分支 main，目录 / (root)，保存。
 4. 等待 Pages 显示网址，用手机 Safari 或 Chrome 打开。地址通常是 https://你的用户名.github.io/crush-monitor-mobile/ 。
-5. 右上角「…」→ 填写自己的 TypeSafe API Key。不要把 Key 放进 GitHub 文件或截图中。
+5. 先部署下文的转发服务，再在右上角「…」填写转发地址和自己的 TypeSafe API Key。不要把 Key 放进 GitHub 文件或截图中。
 
 ## 手机上如何粘贴
 
@@ -27,28 +27,29 @@
 
 ## GitHub Pages 与模型调用
 
-GitHub Pages 只托管静态网页。这个版本把原来的分析编排移到浏览器，使用官方 SDK 和使用者自己输入的 Key 直接调用 TypeSafe；并非离线模型。密钥及聊天不写入 localStorage，刷新页面清空。分析会发送当前上下文，按原版分批调用，可能产生多次请求和费用。
+GitHub Pages 只托管静态网页。TypeSafe 不接受当前网页来源的跨域直连，因此分析必须经过你控制的后端转发服务。网页不再直接请求 TypeSafe，连接失败会停止剩余分析任务。
 
-本次已通过 TypeScript 构建及原项目 24 项单元测试。未提供真实 API Key，因此未验证实际模型返回、账号额度、TypeSafe 对 GitHub Pages 来源的跨域策略，也未在真实 iPhone/Android 微信环境中测试。若直连被 CORS 或网络阻止，需要下面的自建服务；不能仅靠 GitHub Pages 设置解决。
+Key 和聊天只保存在页面内存中，刷新后清空。分析时会发送给你配置的转发服务，再由服务调用 TypeSafe。只填写自己控制或信任的服务地址。
 
-## 直连受限时：可选自建 Worker
+## 部署转发服务（必需）
 
-源码内附 `worker/index.ts` 和 `wrangler.toml`，继续复用原版分析逻辑，不用伪造分数。
+源码包含 Cloudflare Worker `worker/index.ts`、可直接上传的 `worker/worker.bundle.mjs` 和 `wrangler.toml`。服务继续复用原版模型与分析逻辑。
 
-1. 在 `source` 目录执行 `npm ci`。
-2. 把 wrangler.toml 中 ALLOWED_ORIGIN 改为 Pages 的 origin，例如 https://你的用户名.github.io（不带仓库路径、末尾斜杠）。
-3. 安装并登录 Cloudflare Wrangler，运行 `npx wrangler deploy`。
-4. 在网页设置 → 连接设置中填入 https://你的-worker地址/api/analyze 。
+1. 在 source 目录执行 `npm ci`。
+2. wrangler.toml 的 ALLOWED_ORIGIN 已设为 https://muyunyixi.github.io 。更换 Pages 账号时需相应修改，不含仓库路径。
+3. 在自己的 Cloudflare 账号登录 Wrangler，运行 `npx wrangler deploy`。
+4. 在网页右上角设置填写 https://你的-worker地址/api/analyze 和个人 TypeSafe API Key。
 
-Worker 使用每次请求携带的个人 Key，不内置公共 Key，不记录聊天。只允许配置的网页 origin。Origin 校验不是身份认证；不要改成服务器共享密钥并直接公开。自建服务会接收 Key 和聊天，仅使用自己控制或信任的地址。
+Worker 不内置公共 Key，不主动记录聊天。Origin 校验不能代替身份认证，不应在此公开服务中放置共享密钥。
 
-## 源码部署方式
+## 构建与发布
 
-`source` 是完整修改后源码，保留原始 Node 服务文件以便参考；移动版默认不会调用本机服务。
-把 source 内的文件（含 .github）提交到仓库，Settings → Pages → Source 选 GitHub Actions。附带流程会安装依赖、测试、构建并发布 dist。
-本地开发：npm ci，然后 npx vite --host 127.0.0.1。
-构建：npm run build。
-测试：node --import tsx --test tests/*.test.ts。
+仓库根目录是编译后的网页，source 目录是源码。修改源码后运行 `npm ci`、`npm run build`，把 dist 中的 index.html、favicon.svg、LICENSE 和 .nojekyll 复制到仓库根目录。Pages 使用 main 分支根目录。
+
+本地开发：`npx vite --host 127.0.0.1`。
+测试：`node --import tsx --test tests/*.test.ts`。
+
+已通过 TypeScript 构建及 28 项测试，覆盖缺少转发地址时不发送请求、跨域预检及错误响应。真实模型调用必须在后端部署后另行验证；测试通过不代表服务已经上线。
 
 ## 分析含义
 

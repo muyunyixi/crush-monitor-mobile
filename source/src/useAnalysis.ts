@@ -1,4 +1,4 @@
-import { analyze, requestSchema } from "../server/analysis";
+import { requestAnalysis, validateConnection } from "./transport";
 import { connection } from "./connection";
 import { useRef, useState } from "react";
 import {
@@ -65,6 +65,9 @@ export function useAnalysis() {
     setOverviewFresh(false);
     setError("");
     setCurrentIds(new Set());
+    try { validateConnection(connection); }
+    catch (e) { setError((e as Error).message); setStatus("error"); return; }
+    const config = { ...connection };
     let nextOverview: Overview | null = null;
     const nextLines: Record<string, LineResult> = {};
     let failures = 0;
@@ -108,21 +111,7 @@ export function useAnalysis() {
         contextKey(job.messages, relation) + job.task + job.targetIds.join(",");
       let result = cache.current.get(key);
       if (!result) {
-        if (!connection.key.trim()) throw new Error("请先在右上角设置中填写 TypeSafe API Key。");
-        const validated = requestSchema.parse(job);
-        if (connection.endpoint) {
-          const endpoint = new URL(connection.endpoint);
-          if (endpoint.protocol !== "https:") throw new Error("自建分析服务必须使用 HTTPS 地址");
-          const response = await fetch(endpoint, {
-            method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${connection.key}` },
-            body: JSON.stringify(validated), signal: ctrl.signal,
-          });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "分析服务请求失败");
-          result = data as AnalysisResponse;
-        } else {
-          result = await analyze(validated, ctrl.signal, connection.key);
-        }
+        result = await requestAnalysis(job, config, ctrl.signal);
         if (result.revision !== revision)
           throw new Error("分析批次不匹配，请重试");
         const digest = await crypto.subtle.digest(
@@ -159,6 +148,8 @@ export function useAnalysis() {
           if (ctrl.signal.aborted || rev.current !== revision) return;
           failures++;
           setError((e as Error).message);
+          jobs.length = 0;
+          ctrl.abort();
         } finally {
           if (rev.current === revision)
             setProgress((p) => ({ ...p, done: ++done }));

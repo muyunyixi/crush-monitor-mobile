@@ -563,12 +563,12 @@ export default function App() {
           <label className="field">TypeSafe API Key
             <input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => {setApiKey(e.target.value); connection.key = e.target.value; a.reset();}} placeholder="输入自己的 API Key" />
           </label>
-          <p>密钥和聊天只在当前页面内存中保留，刷新即清空。点击分析会把聊天发送至 TypeSafe，并使用你的 API 额度。</p>
-          <details><summary>连接设置（直连失败时使用）</summary>
+          <p>密钥和聊天只在当前页面内存中保留，刷新即清空。点击分析会经你配置的转发服务把聊天发送至 TypeSafe，并使用你的 API 额度。</p>
+          <div className="connection-settings"><p>分析需要转发服务：TypeSafe 不允许网页直接调用。</p>
             <label className="field">自建分析服务 HTTPS 地址
               <input type="url" value={endpoint} placeholder="https://你的服务/api/analyze" onChange={e => {setEndpoint(e.target.value); connection.endpoint = e.target.value.trim(); a.reset();}} />
-            </label><p>仅填写自己信任的服务；该服务会接收聊天和密钥。留空直接连接 TypeSafe。</p>
-          </details>
+            </label><p>仅填写自己控制或信任的服务；该服务会接收聊天和密钥。</p>
+          </div>
           <label className="field">
             你们的关系
             <select
