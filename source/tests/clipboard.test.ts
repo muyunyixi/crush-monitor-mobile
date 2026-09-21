@@ -4,6 +4,7 @@ import {
   htmlClipboardToText,
   joinClipboardTexts,
   readClipboardData,
+  readClipboardPaste,
   readClipboardText,
 } from "../src/clipboard";
 
@@ -45,4 +46,27 @@ test("微信内嵌换行符会转换为普通换行", () => {
     htmlClipboardToText("<p>第一条\u2028第二行</p><p>第三条</p>"),
     "第一条\n第二行\n第三条",
   );
+});
+
+test("微信把多条消息拆成多个剪贴板项目时会完整合并", async () => {
+  const values = ["Crush：第一条", "我：第二条", "Crush：第三条"];
+  const text = await readClipboardPaste({
+    getData: () => values[0],
+    items: values.map((value) => ({
+      kind: "string",
+      type: "text/plain",
+      getAsString: (callback: (text: string) => void) => callback(value),
+    })),
+  });
+  assert.equal(text, values.join("\n"));
+});
+
+test("粘贴事件只有一条时会再读取系统剪贴板中的完整记录", async () => {
+  const text = await readClipboardPaste(
+    { getData: () => "Crush：第一条" },
+    {
+      readText: async () => "Crush：第一条\n我：第二条\nCrush：第三条",
+    },
+  );
+  assert.equal(text, "Crush：第一条\n我：第二条\nCrush：第三条");
 });

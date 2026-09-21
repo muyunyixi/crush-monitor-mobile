@@ -44,8 +44,10 @@ import { useAnalysis } from "./useAnalysis";
 import {
   normalizeClipboardText,
   readClipboardData,
+  readClipboardPaste,
   readClipboardText,
 } from "./clipboard";
+import { conversationCharms } from "./charms";
 
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 
@@ -137,16 +139,20 @@ export default function App() {
     }
   }
   function onPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    const text = readClipboardData(event.clipboardData);
-    if (!text) return;
+    const immediate = readClipboardData(event.clipboardData);
+    if (!immediate) return;
     event.preventDefault();
-    acceptPastedText(text);
+    acceptPastedText(immediate);
+    void readClipboardPaste(event.clipboardData, navigator.clipboard).then(
+      (complete) => {
+        if (complete) acceptPastedText(complete);
+      },
+    );
   }
   function submitInput() {
     if (!messages.length && !relationConfirmed) {
-      setBulkText(input);
+      openBulkEditor(input);
       setBulkRelation("");
-      setBulkEditing(true);
       return;
     }
     if (single) {
@@ -240,6 +246,7 @@ export default function App() {
     quality = meanQuality(messages, a.lines);
   const imperialMode =
     messages.filter((m) => /朕|大皇帝|灵气复苏/.test(m.text)).length >= 2;
+  const charms = conversationCharms(messages);
   let selfStreak = 0;
   for (
     let i = messages.length - 1;
@@ -256,16 +263,20 @@ export default function App() {
     last.overview.affinity.value != null
       ? last.overview.affinity.value - previous.overview.affinity.value
       : null;
-  function start(ms: Message[]) {
+  function start(ms: Message[], selectedRelation = relation) {
     if (!withinScope(ms)) {
       setScope(ms);
       return;
     }
     setMessages(ms);
     setInput("");
-    a.run(ms, relation);
+    a.run(ms, selectedRelation);
   }
-  function add(ms: Message[], mode: "auto" | "append" | "skip" = "auto") {
+  function add(
+    ms: Message[],
+    mode: "auto" | "append" | "skip" = "auto",
+    selectedRelation = relation,
+  ) {
     const m = mergeMessages(messages, ms, mode);
     if (m.ambiguous) {
       setOverlap(ms);
@@ -277,7 +288,7 @@ export default function App() {
       return;
     }
     setNotice("");
-    start(m.messages);
+    start(m.messages, selectedRelation);
   }
   function prepare(text: string) {
     if (!text.trim()) return;
@@ -296,13 +307,7 @@ export default function App() {
       add(toMessages(p.messages, self));
       return;
     }
-    setRaw(text);
-    setParsed(p.messages);
-    setManualSenders(
-      p.messages.map((_, index) => (index % 2 === 0 ? "other" : "self")),
-    );
-    setRole(names.includes(self) ? self : names.includes("我") ? "我" : "");
-    setImporting(true);
+    openBulkEditor(text);
   }
   function confirmImport() {
     const names = [...new Set(parsed.map((x) => x.speaker))];
@@ -359,30 +364,80 @@ export default function App() {
       else void a.refreshQuota({ endpoint: nextEndpoint, key: nextKey });
     }
   }
-  function openBulkEditor(value = input) {
+  function updateBulkText(value: string) {
+    const next = parseChat(value).messages;
+    const nextNames = [...new Set(next.map((message) => message.speaker))];
     setBulkText(value);
+    setParsed(next);
+    setManualSenders(
+      next.map((_, index) => (index % 2 === 0 ? "other" : "self")),
+    );
+    setRole(
+      nextNames.includes(self) ? self : nextNames.includes("我") ? "我" : "",
+    );
+  }
+  function openBulkEditor(value = input) {
+    updateBulkText(value);
     setBulkRelation(relationConfirmed ? relation : "");
     setBulkEditing(true);
+  }
+  async function readAllIntoBulk() {
+    try {
+      const text = await readClipboardText(navigator.clipboard);
+      updateBulkText(text);
+      const count = parseChat(text).messages.length;
+      setNotice(`已从系统剪贴板读取 ${count || 1} 条内容。`);
+    } catch {
+      setNotice("浏览器未允许直接读取，请在弹窗输入框内长按粘贴。");
+    }
   }
   function confirmBulkEditor() {
     if (!bulkText.trim() || !bulkRelation) return;
     setRelation(bulkRelation);
     setRelationConfirmed(true);
     setInput(bulkText);
-    setBulkEditing(false);
     if (single) {
       if (!self) setSelf("我");
       if (!messages.length) setOther("对方");
-      add([
-        {
-          id: crypto.randomUUID(),
-          sender: singleSender,
-          text: bulkText.trim(),
-          timestamp: null,
-          kind: "text",
-        },
-      ]);
-    } else prepare(bulkText);
+      setBulkEditing(false);
+      add(
+        [
+          {
+            id: crypto.randomUUID(),
+            sender: singleSender,
+            text: bulkText.trim(),
+            timestamp: null,
+            kind: "text",
+          },
+        ],
+        "auto",
+        bulkRelation,
+      );
+      return;
+    }
+    if (names.length === 1 && names[0] === "未分配") {
+      const converted = parsed.map((message, index) => ({
+        ...message,
+        speaker: manualSenders[index] === "self" ? "我" : "对方",
+      }));
+      setSelf("我");
+      setOther("对方");
+      setBulkEditing(false);
+      add(toMessages(converted, "我"), "auto", bulkRelation);
+      return;
+    }
+    if (
+      !role ||
+      !parsed.length ||
+      names.length > 2 ||
+      names.includes("未分配") ||
+      (!names.includes(role) && role !== "__self_absent__")
+    )
+      return;
+    setSelf(role);
+    setOther(names.find((name) => name !== role) || "Crush");
+    setBulkEditing(false);
+    add(toMessages(parsed, role), "auto", bulkRelation);
   }
   const names = [...new Set(parsed.map((x) => x.speaker))];
   const chosen = messages.find((m) => m.id === detail),
@@ -545,6 +600,14 @@ export default function App() {
                 );
               })
             )}
+            {charms.length > 0 && (
+              <button
+                className="spark-discovery"
+                onClick={() => setDetail("sparks")}
+              >
+                <Sparkles size={14} /> 发现 {charms.length} 个对话彩蛋
+              </button>
+            )}
             <div ref={bottom} />
           </div>
           <div className="chat-insights">
@@ -589,10 +652,7 @@ export default function App() {
             <div className="mobile-import">
               <button
                 className={!single ? "selected" : ""}
-                onClick={() => {
-                  setSingle(false);
-                  openBulkEditor();
-                }}
+                onClick={() => setSingle(false)}
               >
                 整段记录
               </button>
@@ -638,11 +698,22 @@ export default function App() {
                 ref={inputRef}
                 aria-label="粘贴微信聊天记录"
                 placeholder={
-                  messages.length ? "粘贴新的聊天记录" : "粘贴微信聊天记录"
+                  !single
+                    ? "点击这里，打开整段粘贴窗口"
+                    : messages.length
+                      ? "粘贴一条新消息"
+                      : "粘贴一条消息"
                 }
                 value={input}
+                readOnly={!single}
+                onFocus={() => {
+                  if (!single) {
+                    inputRef.current?.blur();
+                    openBulkEditor();
+                  }
+                }}
                 onChange={(e) => setInput(e.target.value)}
-                onPaste={onPaste}
+                onPaste={single ? onPaste : undefined}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
                     submitInput();
@@ -651,14 +722,14 @@ export default function App() {
               <button
                 className="compose-round"
                 aria-label="粘贴聊天"
-                onClick={pasteFromPhone}
+                onClick={() => (single ? pasteFromPhone() : openBulkEditor())}
               >
                 <Smile size={26} />
               </button>
               <button
                 className="compose-plus"
                 aria-label="粘贴聊天"
-                onClick={pasteFromPhone}
+                onClick={() => (single ? pasteFromPhone() : openBulkEditor())}
               >
                 <Plus size={24} />
               </button>
@@ -717,7 +788,7 @@ export default function App() {
       {bulkEditing && (
         <Modal title="粘贴整段聊天" close={() => setBulkEditing(false)}>
           <p className="bulk-help">
-            可以在这里长按粘贴、补行或修正昵称。每条消息尽量单独一行，例如“我：内容”。
+            在这里一次完成粘贴、修改、关系选择和身份确认。每条消息尽量单独一行，例如“我：内容”。
           </p>
           <label className="field required-field">
             当前关系状态（必选）
@@ -740,21 +811,135 @@ export default function App() {
               autoFocus
               value={bulkText}
               placeholder={"Crush：第一条消息\n我：第二条消息"}
-              onChange={(e) => setBulkText(e.target.value)}
+              onChange={(e) => updateBulkText(e.target.value)}
               onPaste={(e) => {
-                const text = readClipboardData(e.clipboardData);
-                if (!text) return;
+                const immediate = readClipboardData(e.clipboardData);
+                if (!immediate) return;
                 e.preventDefault();
-                setBulkText(text);
+                updateBulkText(immediate);
+                void readClipboardPaste(
+                  e.clipboardData,
+                  navigator.clipboard,
+                ).then((complete) => {
+                  if (complete) updateBulkText(complete);
+                });
               }}
             />
           </label>
+          <button className="clipboard-retry" onClick={readAllIntoBulk}>
+            <Plus size={15} /> 从系统剪贴板重新读取全部内容
+          </button>
+          {!single && parsed.length > 0 && (
+            <div className="inline-role-confirm">
+              <strong>已识别 {parsed.length} 条，确认聊天中的“我”</strong>
+              {names.length === 1 && names[0] === "未分配" ? (
+                <>
+                  <p className="manual-help">
+                    没有昵称时默认按“对方、我”交替排列，可以逐条点标签切换。
+                  </p>
+                  <div className="manual-actions">
+                    <button
+                      onClick={() =>
+                        setManualSenders(
+                          parsed.map((_, index) =>
+                            index % 2 === 0 ? "other" : "self",
+                          ),
+                        )
+                      }
+                    >
+                      首条是对方
+                    </button>
+                    <button
+                      onClick={() =>
+                        setManualSenders(
+                          parsed.map((_, index) =>
+                            index % 2 === 0 ? "self" : "other",
+                          ),
+                        )
+                      }
+                    >
+                      首条是我
+                    </button>
+                  </div>
+                  <div
+                    className="manual-lines compact"
+                    aria-label="逐条确认发送方"
+                  >
+                    {parsed.map((message, index) => (
+                      <div
+                        className="manual-line"
+                        key={`${index}-${message.text}`}
+                      >
+                        <button
+                          className={
+                            manualSenders[index] === "self" ? "self" : "other"
+                          }
+                          onClick={() =>
+                            setManualSenders((old) =>
+                              old.map((sender, itemIndex) =>
+                                itemIndex === index
+                                  ? sender === "self"
+                                    ? "other"
+                                    : "self"
+                                  : sender,
+                              ),
+                            )
+                          }
+                        >
+                          {manualSenders[index] === "self" ? "我" : "对方"}
+                        </button>
+                        <span>{message.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="role-options">
+                  {names
+                    .filter((name) => name !== "未分配")
+                    .map((name) => (
+                      <button
+                        className={role === name ? "selected" : ""}
+                        key={name}
+                        onClick={() => setRole(name)}
+                      >
+                        我是{name}
+                      </button>
+                    ))}
+                  {names.length === 1 && (
+                    <button
+                      className={role === "__self_absent__" ? "selected" : ""}
+                      onClick={() => setRole("__self_absent__")}
+                    >
+                      这些都是对方的话
+                    </button>
+                  )}
+                </div>
+              )}
+              {(names.length > 2 ||
+                (names.includes("未分配") && names.length > 1)) && (
+                <p className="error">
+                  识别到多个昵称或混合格式，请先在上方文本框统一成“我：内容”“对方：内容”。
+                </p>
+              )}
+            </div>
+          )}
           <button
             className="primary"
-            disabled={!bulkText.trim() || !bulkRelation}
+            disabled={
+              !bulkText.trim() ||
+              !bulkRelation ||
+              (!single &&
+                (!parsed.length ||
+                  names.length > 2 ||
+                  (names.includes("未分配") && names.length > 1) ||
+                  (names[0] !== "未分配" &&
+                    (!role ||
+                      (!names.includes(role) && role !== "__self_absent__")))))
+            }
             onClick={confirmBulkEditor}
           >
-            识别并继续
+            开始分析
           </button>
         </Modal>
       )}
@@ -978,17 +1163,34 @@ export default function App() {
           title={
             detail === "overview"
               ? "好感度"
-              : detail === "action"
-                ? "下一步"
-                : detail === "performance"
-                  ? "我的发挥"
-                  : chosen?.sender === "other"
-                    ? "情绪与意图"
-                    : "回复评价"
+              : detail === "sparks"
+                ? "对话彩蛋"
+                : detail === "action"
+                  ? "下一步"
+                  : detail === "performance"
+                    ? "我的发挥"
+                    : chosen?.sender === "other"
+                      ? "情绪与意图"
+                      : "回复评价"
           }
           close={() => setDetail(null)}
         >
-          {detail === "overview" ? (
+          {detail === "sparks" ? (
+            <>
+              <p>这些是完全在浏览器本地发现的小细节，不会额外消耗分析次数。</p>
+              <div className="spark-list">
+                {charms.map((charm) => (
+                  <div className="spark-item" key={charm.key}>
+                    <span aria-hidden="true">{charm.icon}</span>
+                    <div>
+                      <strong>{charm.label}</strong>
+                      <p>{charm.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : detail === "overview" ? (
             <>
               <p>
                 0—100 是模型对这段聊天的好感信号评分，不是「对方喜欢你的概率」。

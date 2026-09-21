@@ -1499,6 +1499,27 @@ body {
   align-self: center;
   margin-block: 0;
 }
+.affinity-summary {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+}
+.affinity-summary > span,
+.affinity-summary > strong,
+.affinity-summary > small,
+.affinity-summary > svg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 20px;
+  line-height: 20px;
+  vertical-align: middle;
+}
+.affinity-summary .affinity-number {
+  min-width: 22px;
+  padding-top: 0;
+}
 .insight-divider {
   align-self: center;
 }
@@ -1521,4 +1542,64 @@ body {
   gap: 3px;
   color: #8a6a42;
   white-space: nowrap;
+}
+.clipboard-retry {
+  width: 100%;
+  min-height: 38px;
+  margin-top: -4px;
+  border: 1px dashed #cbd8cf;
+  border-radius: 7px;
+  color: #397258;
+  background: #f5faf7;
+}
+.inline-role-confirm {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e0e5e1;
+  border-radius: 8px;
+  background: #fafbfa;
+}
+.inline-role-confirm > strong {
+  font-size: 13px;
+  color: #4b514e;
+}
+.manual-lines.compact {
+  max-height: 190px;
+}
+.spark-discovery {
+  margin: 2px auto 18px;
+  padding: 7px 12px;
+  border: 1px solid #dfd5bf;
+  border-radius: 999px;
+  color: #80633d;
+  background: #f7f1e5;
+  font-size: 12px;
+}
+.spark-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+}
+.spark-item {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid #e6e2d8;
+  border-radius: 9px;
+  background: #fbfaf6;
+}
+.spark-item > span {
+  font-size: 22px;
+  line-height: 1.2;
+}
+.spark-item strong {
+  color: #574c3c;
+}
+.spark-item p {
+  margin-top: 4px;
+  color: #797269;
+  line-height: 1.55;
 }

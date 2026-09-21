@@ -7,6 +7,11 @@ export type ClipboardReader = {
 
 export type ClipboardData = {
   types?: readonly string[];
+  items?: ArrayLike<{
+    kind: string;
+    type: string;
+    getAsString(callback: (value: string) => void): void;
+  }>;
   getData(type: string): string;
 };
 
@@ -63,12 +68,71 @@ function richness(value: string) {
   return speakerLines * 1_000_000 + lines * 10_000 + value.length;
 }
 
+export function richestClipboardText(values: string[]) {
+  return (
+    values
+      .map(normalizeClipboardText)
+      .filter(Boolean)
+      .sort((a, b) => richness(b) - richness(a))[0] ?? ""
+  );
+}
+
 export function chooseClipboardText(plain = "", html = "") {
   const candidates = [
     normalizeClipboardText(plain),
     htmlClipboardToText(html),
   ].filter(Boolean);
-  return candidates.sort((a, b) => richness(b) - richness(a))[0] ?? "";
+  return richestClipboardText(candidates);
+}
+
+function itemText(item: NonNullable<ClipboardData["items"]>[number]) {
+  return new Promise<string>((resolve) => {
+    try {
+      item.getAsString((value) => resolve(value));
+    } catch {
+      resolve("");
+    }
+  });
+}
+
+export async function readClipboardItems(data: ClipboardData) {
+  const items = Array.from(data.items ?? []).filter(
+    (item) => item.kind === "string" && item.type.startsWith("text/"),
+  );
+  const values = await Promise.all(items.map(itemText));
+  const plain = values
+    .filter((_, index) => items[index].type === "text/plain")
+    .map(normalizeClipboardText);
+  const html = values
+    .filter((_, index) => items[index].type === "text/html")
+    .map(htmlClipboardToText);
+  const other = values
+    .filter(
+      (_, index) => !["text/plain", "text/html"].includes(items[index].type),
+    )
+    .map(normalizeClipboardText);
+  return richestClipboardText([
+    ...values.map((value, index) =>
+      items[index].type === "text/html" ? htmlClipboardToText(value) : value,
+    ),
+    joinClipboardTexts(plain),
+    joinClipboardTexts(html),
+    joinClipboardTexts(other),
+  ]);
+}
+
+export async function readClipboardPaste(
+  data: ClipboardData,
+  clipboard?: ClipboardReader,
+) {
+  const immediate = readClipboardData(data);
+  const candidates = [immediate];
+  const itemPromise = readClipboardItems(data).catch(() => "");
+  const systemPromise = clipboard
+    ? readClipboardText(clipboard).catch(() => "")
+    : Promise.resolve("");
+  candidates.push(await itemPromise, await systemPromise);
+  return richestClipboardText(candidates);
 }
 
 export function readClipboardData(data: ClipboardData) {
