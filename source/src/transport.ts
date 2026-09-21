@@ -9,9 +9,34 @@ export function validateConnection(config: ConnectionConfig) {
   return endpoint;
 }
 export type AnalysisResult = AnalysisResponse & { freeRemaining?: number };
-export async function requestAnalysis(job: AnalysisRequest, config: ConnectionConfig, signal: AbortSignal, runId: string): Promise<AnalysisResult> {
+export type QuotaResult = { limit: number; remaining: number; unlimited?: boolean };
+function route(config: ConnectionConfig, pathname: string) {
   const endpoint = validateConnection(config);
-  if (endpoint.pathname === '/' || endpoint.pathname === '') endpoint.pathname = '/api/analyze';
+  if (endpoint.pathname === '/' || endpoint.pathname === '' || endpoint.pathname === '/api/analyze')
+    endpoint.pathname = pathname;
+  return endpoint;
+}
+export async function requestQuota(config: ConnectionConfig, signal?: AbortSignal): Promise<QuotaResult> {
+  const endpoint = route(config, '/api/quota');
+  const headers: Record<string, string> = {};
+  if (config.key.trim()) headers.Authorization = `Bearer ${config.key.trim()}`;
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'GET', headers,
+      signal: AbortSignal.any([signal ?? new AbortController().signal, AbortSignal.timeout(10000)]),
+    });
+  } catch {
+    throw new Error('暂时无法读取今日剩余次数。');
+  }
+  const data = await response.json().catch(() => null) as QuotaResult | { error?: string } | null;
+  if (!response.ok) throw new Error(data && 'error' in data && data.error ? data.error : '暂时无法读取今日剩余次数。');
+  if (!data || !('remaining' in data) || !Number.isInteger(data.remaining))
+    throw new Error('次数服务返回格式不正确。');
+  return data as QuotaResult;
+}
+export async function requestAnalysis(job: AnalysisRequest, config: ConnectionConfig, signal: AbortSignal, runId: string): Promise<AnalysisResult> {
+  const endpoint = route(config, '/api/analyze');
   let response: Response;
   try {
     const headers: Record<string, string> = {

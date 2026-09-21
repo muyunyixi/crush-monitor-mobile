@@ -2,7 +2,7 @@ import { connection } from "./connection";
 import { INTENTS, topIntents } from "../shared/intents";
 import { REPLY_RATINGS, replyRating } from "../shared/ratings";
 import { EMOTIONS, topEmotions } from "../shared/labels";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type ReactNode } from "react";
 import {
   Heart,
   MoreHorizontal,
@@ -34,6 +34,7 @@ import {
 } from "../shared/types";
 import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
+import { readClipboardText } from "./clipboard";
 
 function Modal({
   title,
@@ -101,9 +102,23 @@ export default function App() {
   const [endpoint, setEndpoint] = useState(connection.endpoint);
   const [single, setSingle] = useState(false);
   const [singleSender, setSingleSender] = useState<"self" | "other">("other");
+  const [manualSenders, setManualSenders] = useState<Array<"self" | "other">>([]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  function acceptPastedText(text: string) {
+    const normalized = text.replace(/\r\n?/g, "\n");
+    setInput(normalized);
+    const count = normalized.split("\n").filter((line) => line.trim()).length;
+    setNotice(count > 1 ? `已完整粘贴 ${count} 行，请核对后分析。` : "已粘贴，请核对后点击分析。");
+  }
   async function pasteFromPhone() {
-    try { setInput(await navigator.clipboard.readText()); setNotice("已粘贴，请核对后点击分析聊天。"); }
+    try { acceptPastedText(await readClipboardText(navigator.clipboard)); }
     catch { setNotice("请长按输入框，选择粘贴。"); }
+  }
+  function onPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
+    const text = event.clipboardData.getData("text/plain");
+    if (!text) return;
+    event.preventDefault();
+    acceptPastedText(text);
   }
   function submitInput() {
     if (single) {
@@ -129,6 +144,9 @@ export default function App() {
     [scope, setScope] = useState<Message[] | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const stay = useRef(true);
+  useEffect(() => {
+    void a.refreshQuota({ endpoint, key: apiKey });
+  }, [endpoint, apiKey]);
   useEffect(() => {
     if (stay.current) {
       const scroller = bottom.current?.parentElement;
@@ -190,6 +208,7 @@ export default function App() {
     }
     setRaw(text);
     setParsed(p.messages);
+    setManualSenders(p.messages.map((_, index) => index % 2 === 0 ? "other" : "self"));
     setRole(names.includes(self) ? self : names.includes("我") ? "我" : "");
     setImporting(true);
   }
@@ -199,6 +218,16 @@ export default function App() {
     setOther(names.find((n) => n !== role) || "Crush");
     setImporting(false);
     add(toMessages(parsed, role));
+  }
+  function confirmManualImport() {
+    const converted = parsed.map((message, index) => ({
+      ...message,
+      speaker: manualSenders[index] === "self" ? "我" : "对方",
+    }));
+    setSelf("我");
+    setOther("对方");
+    setImporting(false);
+    add(toMessages(converted, "我"));
   }
   function clear() {
     a.reset();
@@ -395,15 +424,17 @@ export default function App() {
               <button className={!single ? "selected" : ""} onClick={() => setSingle(false)}>整段记录</button>
               <button className={single ? "selected" : ""} onClick={() => setSingle(true)}>单条消息</button>
               {single && <select aria-label="这条消息是谁说的" value={singleSender} onChange={e => setSingleSender(e.target.value as "self" | "other")}><option value="other">对方说</option><option value="self">我说</option></select>}
-              <span className="quota-chip">{apiKey.trim() ? "自有 Key" : a.freeRemaining == null ? "每日免费 10 次" : `今日剩余 ${a.freeRemaining} 次`}</span>
+              <span className="quota-chip">{apiKey.trim() ? "自有 Key" : a.quotaLoading ? "正在读取次数…" : a.freeRemaining == null ? "次数暂不可用" : `今日剩余 ${a.freeRemaining} 次`}</span>
             </div>
             <div className="wechat-composer-line">
               <button className="compose-round" aria-label="语音输入提示" onClick={() => setNotice("请先在微信中复制文字，再回到这里粘贴。") }><Mic size={25} /></button>
               <textarea
+                ref={inputRef}
                 aria-label="粘贴微信聊天记录"
                 placeholder={messages.length ? "粘贴新的聊天记录" : "粘贴微信聊天记录"}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={onPaste}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitInput();
                 }}
@@ -432,6 +463,29 @@ export default function App() {
       </div>
       {importing && (
         <Modal title="确认聊天里的你" close={() => setImporting(false)}>
+          {names.length === 1 && names[0] === "未分配" ? (
+            <>
+              <p className="manual-help">微信没有提供昵称时，请逐条确认发送方。默认按“对方、我”交替排列，可点标签修改。</p>
+              <div className="manual-actions">
+                <button onClick={() => setManualSenders(parsed.map((_, index) => index % 2 === 0 ? "other" : "self"))}>首条是对方</button>
+                <button onClick={() => setManualSenders(parsed.map((_, index) => index % 2 === 0 ? "self" : "other"))}>首条是我</button>
+              </div>
+              <div className="manual-lines" aria-label="逐条确认发送方">
+                {parsed.map((message, index) => (
+                  <div className="manual-line" key={`${index}-${message.text}`}>
+                    <button
+                      className={manualSenders[index] === "self" ? "self" : "other"}
+                      onClick={() => setManualSenders((old) => old.map((sender, i) => i === index ? (sender === "self" ? "other" : "self") : sender))}
+                    >
+                      {manualSenders[index] === "self" ? "我" : "对方"}
+                    </button>
+                    <span>{message.text}</span>
+                  </div>
+                ))}
+              </div>
+              <button className="primary" disabled={!parsed.length} onClick={confirmManualImport}>按以上顺序分析</button>
+            </>
+          ) : <>
           <div className="role-options">
             {names
               .filter((n) => n !== "未分配")
@@ -459,7 +513,9 @@ export default function App() {
               value={raw}
               onChange={(e) => {
                 setRaw(e.target.value);
-                setParsed(parseChat(e.target.value).messages);
+                const next = parseChat(e.target.value).messages;
+                setParsed(next);
+                setManualSenders(next.map((_, index) => index % 2 === 0 ? "other" : "self"));
               }}
             />
           </label>
@@ -481,6 +537,7 @@ export default function App() {
           >
             开始分析
           </button>
+          </>}
         </Modal>
       )}
       {settings && (

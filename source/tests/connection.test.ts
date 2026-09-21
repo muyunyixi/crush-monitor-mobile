@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { UsageLimiter } from "../worker/index";
-import { requestAnalysis, validateConnection } from "../src/transport";
+import { requestAnalysis, requestQuota, validateConnection } from "../src/transport";
 import type { AnalysisRequest } from "../shared/types";
 
 const origin = "https://muyunyixi.github.io";
@@ -49,6 +49,27 @@ test("同一分析批次只扣一次，单日第 11 个批次被限制", async (
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).remaining, 0);
   assert.equal((await reserve("run-11")).status, 429);
+  const status = await limiter.fetch(new Request("https://usage.internal", {
+    method: "POST",
+    body: JSON.stringify({ date: "2026-09-21", action: "status" }),
+  }));
+  assert.deepEqual(await status.json(), { allowed: true, remaining: 0 });
+});
+
+test("次数查询使用独立 GET 接口且不会要求个人 Key", async () => {
+  const old = globalThis.fetch;
+  let requested = "";
+  globalThis.fetch = async (input, init) => {
+    requested = String(input);
+    assert.equal(init?.method, "GET");
+    return Response.json({ limit: 10, remaining: 6 });
+  };
+  try {
+    assert.deepEqual(await requestQuota({ endpoint: "https://worker.example", key: "" }), { limit: 10, remaining: 6 });
+    assert.equal(requested, "https://worker.example/api/quota");
+  } finally {
+    globalThis.fetch = old;
+  }
 });
 
 test("Worker 允许 Pages 预检并声明分析批次请求头", async () => {
@@ -64,6 +85,27 @@ test("Worker 允许 Pages 预检并声明分析批次请求头", async () => {
     headers: { Origin: "https://untrusted.example" },
   }), { ALLOWED_ORIGIN: origin });
   assert.equal(bad.status, 403);
+});
+
+test("Worker 可为多个明确列出的前端域名返回额度", async () => {
+  const data = new Map<string, unknown>();
+  const limiter = new UsageLimiter({
+    storage: {
+      get: async <T>(key: string) => data.get(key) as T | undefined,
+      put: async <T>(key: string, value: T) => { data.set(key, value); },
+    },
+  });
+  const namespace = {
+    idFromName: (name: string) => name,
+    get: () => ({ fetch: (request: Request) => limiter.fetch(request) }),
+  };
+  const customOrigin = "https://app.example.com";
+  const response = await worker.fetch(new Request("https://worker.example/api/quota", {
+    method: "GET",
+    headers: { Origin: customOrigin, "CF-Connecting-IP": "203.0.113.1" },
+  }), { ALLOWED_ORIGIN: `${origin}, ${customOrigin}`, USAGE_LIMITER: namespace });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { limit: 10, remaining: 10 });
 });
 
 test("无个人 Key 时使用公共服务流程，未部署额度绑定会明确报错", async () => {

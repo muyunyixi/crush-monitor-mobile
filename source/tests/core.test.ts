@@ -38,6 +38,11 @@ test("手动格式支持多行、连续同人、emoji与附件", () => {
 });
 test("未知角色不强行交替", () =>
   assert.ok(parseChat("没有说话人的一句话").warnings.length));
+test("手机复制的无昵称多行会保留为多条待分配消息", () => {
+  const parsed = parseChat("第一条\n第二条\n第三条");
+  assert.deepEqual(parsed.messages.map((message) => message.text), ["第一条", "第二条", "第三条"]);
+  assert.ok(parsed.messages.every((message) => message.speaker === "未分配"));
+});
 test("多人需校正", () =>
   assert.ok(parseChat("甲：a\n乙：b\n丙：c").warnings.length));
 test("同记录重复导入保留ID且不追加", () => {

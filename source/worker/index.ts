@@ -24,15 +24,20 @@ export class UsageLimiter {
   constructor(private state: DurableState) {}
 
   async fetch(request: Request): Promise<Response> {
-    const { date, runId } = (await request.json()) as {
+    const { date, runId, action } = (await request.json()) as {
       date?: string;
       runId?: string;
+      action?: string;
     };
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || !runId || runId.length > 128)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || ""))
       return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
 
     let usage = await this.state.storage.get<UsageRecord>("usage");
     if (!usage || usage.date !== date) usage = { date: date!, runIds: [] };
+    if (action === "status")
+      return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
+    if (!runId || runId.length > 128)
+      return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
     if (usage.runIds.includes(runId))
       return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
     if (usage.runIds.length >= FREE_DAILY_LIMIT)
@@ -69,6 +74,19 @@ async function reserveFreeUse(request: Request, env: WorkerEnv, runId: string) {
   };
 }
 
+async function getFreeStatus(request: Request, env: WorkerEnv) {
+  if (!env.USAGE_LIMITER) return { remaining: 0, unavailable: true };
+  const ipHash = await sha256(request.headers.get("CF-Connecting-IP") || "unknown");
+  const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(ipHash));
+  const response = await stub.fetch(new Request("https://usage.internal/status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: new Date().toISOString().slice(0, 10), action: "status" }),
+  }));
+  const data = (await response.json()) as { remaining?: number };
+  return { remaining: Math.max(0, Number(data.remaining) || 0), unavailable: !response.ok };
+}
+
 function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), { status, headers });
 }
@@ -76,11 +94,12 @@ function json(body: unknown, status: number, headers: Record<string, string>) {
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const origin = request.headers.get("Origin");
-    if (!env.ALLOWED_ORIGIN || origin !== env.ALLOWED_ORIGIN)
+    const allowedOrigins = (env.ALLOWED_ORIGIN || "").split(",").map((value) => value.trim()).filter(Boolean);
+    if (!origin || !allowedOrigins.includes(origin))
       return new Response("Forbidden", { status: 403 });
     const headers: Record<string, string> = {
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Analysis-Run",
       "Access-Control-Expose-Headers": "X-Free-Limit, X-Free-Remaining",
       Vary: "Origin",
@@ -91,6 +110,17 @@ export default {
     if (request.method === "GET" && url.pathname === "/health")
       return json({ ok: true, service: "crush-monitor-api", freeDailyLimit: FREE_DAILY_LIMIT }, 200, headers);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
+    if (request.method === "GET" && url.pathname === "/api/quota") {
+      const auth = request.headers.get("Authorization") || "";
+      if (auth.startsWith("Bearer ") && auth.slice(7).trim())
+        return json({ limit: FREE_DAILY_LIMIT, remaining: FREE_DAILY_LIMIT, unlimited: true }, 200, headers);
+      const quota = await getFreeStatus(request, env);
+      if (quota.unavailable)
+        return json({ error: "免费次数服务尚未部署。" }, 503, headers);
+      headers["X-Free-Limit"] = String(FREE_DAILY_LIMIT);
+      headers["X-Free-Remaining"] = String(quota.remaining);
+      return json({ limit: FREE_DAILY_LIMIT, remaining: quota.remaining }, 200, headers);
+    }
     if (request.method !== "POST" || url.pathname !== "/api/analyze")
       return json({}, 404, headers);
 

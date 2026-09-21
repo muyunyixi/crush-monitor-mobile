@@ -49,7 +49,7 @@ jobs:
         working-directory: source
       - name: Build with deployed Worker endpoint
         env:
-          VITE_ANALYSIS_ENDPOINT: ${{ steps.deploy.outputs.deployment-url }}
+          VITE_ANALYSIS_ENDPOINT: ${{ vars.PUBLIC_WORKER_URL || steps.deploy.outputs.deployment-url }}
         working-directory: source
         run: |
           test -n "$VITE_ANALYSIS_ENDPOINT"

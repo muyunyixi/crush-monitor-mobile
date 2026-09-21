@@ -1,4 +1,4 @@
-import { requestAnalysis, validateConnection, type AnalysisResult } from "./transport";
+import { requestAnalysis, requestQuota, validateConnection, type AnalysisResult } from "./transport";
 import { connection } from "./connection";
 import { useRef, useState } from "react";
 import {
@@ -22,12 +22,29 @@ export function useAnalysis() {
     [history, setHistory] = useState<Snapshot[]>([]),
     [progress, setProgress] = useState({ done: 0, total: 0 }),
     [freeRemaining, setFreeRemaining] = useState<number | null>(null),
+    [quotaLoading, setQuotaLoading] = useState(false),
     [latency, setLatency] = useState(0),
     [currentIds, setCurrentIds] = useState<Set<string>>(new Set());
   const rev = useRef(0),
     controller = useRef<AbortController | null>(null),
     cache = useRef(new Map<string, AnalysisResult>()),
     historyRef = useRef<Snapshot[]>([]);
+  async function refreshQuota(config = { ...connection }) {
+    if (!config.endpoint.trim() || config.key.trim()) {
+      setFreeRemaining(null);
+      setQuotaLoading(false);
+      return;
+    }
+    setQuotaLoading(true);
+    try {
+      const quota = await requestQuota(config);
+      setFreeRemaining(quota.remaining);
+    } catch {
+      setFreeRemaining(null);
+    } finally {
+      setQuotaLoading(false);
+    }
+  }
   function cancel() {
     rev.current++;
     controller.current?.abort();
@@ -43,7 +60,6 @@ export function useAnalysis() {
     setLines({});
     setError("");
     setLatency(0);
-    setFreeRemaining(null);
     setCurrentIds(new Set());
   }
   function showFixture(s: Snapshot) {
@@ -206,12 +222,14 @@ export function useAnalysis() {
     history,
     progress,
     freeRemaining,
+    quotaLoading,
     latency,
     currentIds,
     run,
     reset,
     cancel,
     showFixture,
+    refreshQuota,
     meanQuality,
   };
 }

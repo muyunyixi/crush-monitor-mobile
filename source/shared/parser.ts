@@ -61,7 +61,11 @@ export function parseChat(raw: string): {
       current = { speaker: inline[1], timestamp: null, text: inline[2] };
       continue;
     }
-    if (current) {
+    if (current?.speaker === "未分配" && !nativeFormat) {
+      push();
+      current = { speaker: "未分配", timestamp: null, text: line };
+      warnings.push("有文本未识别出说话人，请校正。");
+    } else if (current) {
       current.text += (current.text ? "\n" : "") + line;
     } else {
       current = { speaker: "未分配", timestamp: null, text: line };

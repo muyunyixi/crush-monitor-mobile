@@ -730,6 +730,57 @@ blockquote {
   background: #ebf6ee;
   color: #14844d;
 }
+.manual-help {
+  margin-top: 0 !important;
+}
+.manual-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.manual-actions button {
+  flex: 1;
+  padding: 9px;
+  border: 1px solid #d7d7d7;
+  border-radius: 6px;
+  background: #f7f7f7;
+}
+.manual-lines {
+  max-height: min(42dvh, 360px);
+  overflow: auto;
+  margin-bottom: 16px;
+  border-block: 1px solid #eee;
+}
+.manual-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f1f1f1;
+}
+.manual-line:last-child {
+  border-bottom: 0;
+}
+.manual-line button {
+  width: 48px;
+  flex: none;
+  padding: 5px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.manual-line button.other {
+  background: #fff;
+  border: 1px solid #d8d8d8;
+}
+.manual-line button.self {
+  background: #95ec69;
+  border: 1px solid #7fda57;
+}
+.manual-line span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
 .field {
   display: flex;
   flex-direction: column;
