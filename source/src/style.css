@@ -1044,28 +1044,103 @@ blockquote {
 }
 
 /* Mobile clipboard controls; original WeChat palette and bubbles retained. */
-.wechat { grid-template-rows:76px minmax(0,1fr) 42px 178px; }
-.mobile-import { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
-.mobile-import button, .mobile-import select { min-height:36px; padding:5px 10px; border-radius:6px; font:inherit; }
-.mobile-import .selected { background:#e5eee7; color:#35684d; }
-.mobile-import button:last-child { margin-left:auto; }
-.field input { width:100%; padding:12px; border:1px solid #ddd; border-radius:6px; font:inherit; }
-details { margin-top:18px; } summary { cursor:pointer; }
-.bubble { overflow-wrap:anywhere; }
-@media(max-width:550px) {
-  .app { padding:0; min-height:0; height:100dvh; padding-top:env(safe-area-inset-top); padding-bottom:env(safe-area-inset-bottom); }
-  .wechat { border:0; border-radius:0; grid-template-rows:64px minmax(0,1fr) 42px 188px; }
-  textarea, input, select { font-size:16px !important; }
-  .composer { padding-top:6px; }
-  .composer textarea { height:62px; min-height:42px; }
-  .composer-feedback { max-height:46px; overflow:auto; }
-  .modal { max-height:calc(100dvh - 24px); overflow-y:auto; padding:20px; }
-  .overlay { padding:12px; }
-  .mobile-import { gap:3px; }
-  .mobile-import button { padding:5px 7px; min-height:40px; }
-  .icon, .send { min-height:40px; min-width:40px; }
+.wechat {
+  grid-template-rows: 76px minmax(0, 1fr) 42px 178px;
 }
-@media(max-height:500px) { .app { min-height:0; } .wechat { grid-template-rows:50px minmax(0,1fr) 32px 154px; } }
+.mobile-import {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.mobile-import button,
+.mobile-import select {
+  min-height: 36px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font: inherit;
+}
+.mobile-import .selected {
+  background: #e5eee7;
+  color: #35684d;
+}
+.mobile-import button:last-child {
+  margin-left: auto;
+}
+.field input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font: inherit;
+}
+details {
+  margin-top: 18px;
+}
+summary {
+  cursor: pointer;
+}
+.bubble {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 550px) {
+  .app {
+    padding: 0;
+    min-height: 0;
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .wechat {
+    border: 0;
+    border-radius: 0;
+    grid-template-rows: 64px minmax(0, 1fr) 42px 188px;
+  }
+  textarea,
+  input,
+  select {
+    font-size: 16px !important;
+  }
+  .composer {
+    padding-top: 6px;
+  }
+  .composer textarea {
+    height: 62px;
+    min-height: 42px;
+  }
+  .composer-feedback {
+    max-height: 46px;
+    overflow: auto;
+  }
+  .modal {
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .overlay {
+    padding: 12px;
+  }
+  .mobile-import {
+    gap: 3px;
+  }
+  .mobile-import button {
+    padding: 5px 7px;
+    min-height: 40px;
+  }
+  .icon,
+  .send {
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
+@media (max-height: 500px) {
+  .app {
+    min-height: 0;
+  }
+  .wechat {
+    grid-template-rows: 50px minmax(0, 1fr) 32px 154px;
+  }
+}
 
 /* WeChat mobile shell */
 html,
@@ -1398,4 +1473,52 @@ body {
     min-width: 29px;
     width: 29px;
   }
+}
+
+/* Alignment polish and editable mobile import dialog. */
+.message-row {
+  align-items: flex-start;
+}
+.message-row .avatar {
+  margin-top: 2px;
+}
+.chat-insights {
+  align-items: stretch;
+}
+.chat-insights button {
+  height: 100%;
+  align-items: center;
+  white-space: nowrap;
+  line-height: 1;
+}
+.chat-insights button > span,
+.chat-insights button > strong,
+.chat-insights button > small,
+.chat-insights button > svg {
+  flex: none;
+  align-self: center;
+  margin-block: 0;
+}
+.insight-divider {
+  align-self: center;
+}
+.bulk-help {
+  color: #747977;
+  line-height: 1.65;
+}
+.bulk-editor {
+  min-height: min(42dvh, 360px) !important;
+  resize: vertical;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.required-field select:invalid {
+  color: #8c918e;
+}
+.space-reminder {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #8a6a42;
+  white-space: nowrap;
 }

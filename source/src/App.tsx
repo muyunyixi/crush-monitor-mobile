@@ -2,7 +2,13 @@ import { connection } from "./connection";
 import { INTENTS, topIntents } from "../shared/intents";
 import { REPLY_RATINGS, replyRating } from "../shared/ratings";
 import { EMOTIONS, topEmotions } from "../shared/labels";
-import { useEffect, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent as ReactClipboardEvent,
+  type ReactNode,
+} from "react";
 import {
   Heart,
   MoreHorizontal,
@@ -15,6 +21,7 @@ import {
   Mic,
   Smile,
   Check,
+  Sparkles,
 } from "lucide-react";
 import {
   parseChat,
@@ -34,7 +41,13 @@ import {
 } from "../shared/types";
 import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
-import { readClipboardText } from "./clipboard";
+import {
+  normalizeClipboardText,
+  readClipboardData,
+  readClipboardText,
+} from "./clipboard";
+
+const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 
 function Modal({
   title,
@@ -102,48 +115,116 @@ export default function App() {
   const [endpoint, setEndpoint] = useState(connection.endpoint);
   const [single, setSingle] = useState(false);
   const [singleSender, setSingleSender] = useState<"self" | "other">("other");
-  const [manualSenders, setManualSenders] = useState<Array<"self" | "other">>([]);
+  const [manualSenders, setManualSenders] = useState<Array<"self" | "other">>(
+    [],
+  );
   const inputRef = useRef<HTMLTextAreaElement>(null);
   function acceptPastedText(text: string) {
-    const normalized = text.replace(/\r\n?/g, "\n");
+    const normalized = normalizeClipboardText(text);
     setInput(normalized);
     const count = normalized.split("\n").filter((line) => line.trim()).length;
-    setNotice(count > 1 ? `已完整粘贴 ${count} 行，请核对后分析。` : "已粘贴，请核对后点击分析。");
+    setNotice(
+      count > 1
+        ? `已完整粘贴 ${count} 行，请核对后分析。`
+        : "已粘贴，请核对后点击分析。",
+    );
   }
   async function pasteFromPhone() {
-    try { acceptPastedText(await readClipboardText(navigator.clipboard)); }
-    catch { setNotice("请长按输入框，选择粘贴。"); }
+    try {
+      acceptPastedText(await readClipboardText(navigator.clipboard));
+    } catch {
+      setNotice("请长按输入框，选择粘贴。");
+    }
   }
   function onPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    const text = event.clipboardData.getData("text/plain");
+    const text = readClipboardData(event.clipboardData);
     if (!text) return;
     event.preventDefault();
     acceptPastedText(text);
   }
   function submitInput() {
+    if (!messages.length && !relationConfirmed) {
+      setBulkText(input);
+      setBulkRelation("");
+      setBulkEditing(true);
+      return;
+    }
     if (single) {
       if (!input.trim()) return;
       if (!self) setSelf("我");
       if (!messages.length) setOther("对方");
-      add([{ id: crypto.randomUUID(), sender: singleSender, text: input.trim(), timestamp: null, kind: /^\[(图片|语音|视频|动画表情|文件)\]$/.test(input.trim()) ? "unreadable" : "text" }]);
+      add([
+        {
+          id: crypto.randomUUID(),
+          sender: singleSender,
+          text: input.trim(),
+          timestamp: null,
+          kind: /^\[(图片|语音|视频|动画表情|文件)\]$/.test(input.trim())
+            ? "unreadable"
+            : "text",
+        },
+      ]);
     } else prepare(input);
   }
   const [messages, setMessages] = useState<Message[]>([]),
     [input, setInput] = useState(""),
     [self, setSelf] = useState(""),
     [other, setOther] = useState("Crush"),
-    [relation, setRelation] = useState<Relation>("crush");
+    [relation, setRelation] = useState<Relation>("crush"),
+    [relationConfirmed, setRelationConfirmed] = useState(false);
   const [raw, setRaw] = useState(""),
     [parsed, setParsed] = useState<Parsed[]>([]),
     [role, setRole] = useState(""),
     [importing, setImporting] = useState(false),
     [settings, setSettings] = useState(false),
+    [bulkEditing, setBulkEditing] = useState(false),
+    [bulkText, setBulkText] = useState(""),
+    [bulkRelation, setBulkRelation] = useState<Relation | "">(""),
+    [draftKey, setDraftKey] = useState(apiKey),
+    [draftEndpoint, setDraftEndpoint] = useState(endpoint),
+    [draftRelation, setDraftRelation] = useState<Relation>(relation),
+    [storageReady, setStorageReady] = useState(false),
     [detail, setDetail] = useState<string | null>(null),
     [notice, setNotice] = useState("");
   const [overlap, setOverlap] = useState<Message[] | null>(null),
     [scope, setScope] = useState<Message[] | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const stay = useRef(true);
+  useEffect(() => {
+    try {
+      const value = sessionStorage.getItem(DRAFT_KEY);
+      if (value) {
+        const saved = JSON.parse(value) as {
+          messages?: Message[];
+          self?: string;
+          other?: string;
+          relation?: Relation;
+        };
+        if (Array.isArray(saved.messages) && saved.messages.length) {
+          setMessages(saved.messages);
+          setSelf(saved.self || "我");
+          setOther(saved.other || "Crush");
+          if (saved.relation && saved.relation in RELATIONS)
+            setRelation(saved.relation);
+          setRelationConfirmed(true);
+          setNotice("已恢复本标签页里的聊天，可继续添加或重新分析。");
+        }
+      }
+    } catch {
+      sessionStorage.removeItem(DRAFT_KEY);
+    } finally {
+      setStorageReady(true);
+    }
+  }, []);
+  useEffect(() => {
+    if (!storageReady) return;
+    if (!messages.length) sessionStorage.removeItem(DRAFT_KEY);
+    else
+      sessionStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ messages, self, other, relation }),
+      );
+  }, [storageReady, messages, self, other, relation]);
   useEffect(() => {
     void a.refreshQuota({ endpoint, key: apiKey });
   }, [endpoint, apiKey]);
@@ -157,6 +238,15 @@ export default function App() {
     ov = a.overview,
     value = ov?.affinity.value,
     quality = meanQuality(messages, a.lines);
+  const imperialMode =
+    messages.filter((m) => /朕|大皇帝|灵气复苏/.test(m.text)).length >= 2;
+  let selfStreak = 0;
+  for (
+    let i = messages.length - 1;
+    i >= 0 && messages[i].sender === "self";
+    i--
+  )
+    selfStreak++;
   const last = a.history.at(-1),
     previous = a.history.at(-2);
   const delta =
@@ -208,7 +298,9 @@ export default function App() {
     }
     setRaw(text);
     setParsed(p.messages);
-    setManualSenders(p.messages.map((_, index) => index % 2 === 0 ? "other" : "self"));
+    setManualSenders(
+      p.messages.map((_, index) => (index % 2 === 0 ? "other" : "self")),
+    );
     setRole(names.includes(self) ? self : names.includes("我") ? "我" : "");
     setImporting(true);
   }
@@ -235,9 +327,62 @@ export default function App() {
     setInput("");
     setSelf("");
     setOther("Crush");
+    setRelationConfirmed(false);
     setNotice("");
     setSettings(false);
     setDetail(null);
+    sessionStorage.removeItem(DRAFT_KEY);
+  }
+  function openSettings() {
+    setDraftKey(apiKey);
+    setDraftEndpoint(endpoint);
+    setDraftRelation(relation);
+    setSettings(true);
+  }
+  function saveSettings() {
+    const nextKey = draftKey.trim();
+    const nextEndpoint = draftEndpoint.trim();
+    const changed =
+      nextKey !== apiKey.trim() ||
+      nextEndpoint !== endpoint.trim() ||
+      draftRelation !== relation;
+    setApiKey(nextKey);
+    setEndpoint(nextEndpoint);
+    setRelation(draftRelation);
+    setRelationConfirmed(true);
+    connection.key = nextKey;
+    connection.endpoint = nextEndpoint;
+    setSettings(false);
+    if (changed) {
+      a.reset();
+      if (messages.length) a.run(messages, draftRelation);
+      else void a.refreshQuota({ endpoint: nextEndpoint, key: nextKey });
+    }
+  }
+  function openBulkEditor(value = input) {
+    setBulkText(value);
+    setBulkRelation(relationConfirmed ? relation : "");
+    setBulkEditing(true);
+  }
+  function confirmBulkEditor() {
+    if (!bulkText.trim() || !bulkRelation) return;
+    setRelation(bulkRelation);
+    setRelationConfirmed(true);
+    setInput(bulkText);
+    setBulkEditing(false);
+    if (single) {
+      if (!self) setSelf("我");
+      if (!messages.length) setOther("对方");
+      add([
+        {
+          id: crypto.randomUUID(),
+          sender: singleSender,
+          text: bulkText.trim(),
+          timestamp: null,
+          kind: "text",
+        },
+      ]);
+    } else prepare(bulkText);
   }
   const names = [...new Set(parsed.map((x) => x.speaker))];
   const chosen = messages.find((m) => m.id === detail),
@@ -250,15 +395,24 @@ export default function App() {
             <button
               className="chat-back"
               aria-label="开始新聊天"
-              onClick={() => messages.length ? setDetail("clear") : setSettings(true)}
+              onClick={() =>
+                messages.length ? setDetail("clear") : openSettings()
+              }
             >
               <ArrowLeft size={31} strokeWidth={1.8} />
             </button>
             <div className="contact-title">
               <h2>{messages.length ? other : "聊天分析"}</h2>
-              <span>{RELATIONS[relation]}</span>
+              <span>
+                {imperialMode ? "御前模式 · " : ""}
+                {RELATIONS[relation]}
+              </span>
             </div>
-            <button className="chat-more" aria-label="更多聊天设置" onClick={() => setSettings(true)}>
+            <button
+              className="chat-more"
+              aria-label="更多聊天设置"
+              onClick={openSettings}
+            >
               <MoreHorizontal size={29} strokeWidth={2} />
             </button>
           </header>
@@ -276,7 +430,7 @@ export default function App() {
                 <p>长按微信文字复制，返回这里粘贴</p>
                 <button
                   className="text-button"
-                  onClick={() => prepare(exampleText(0))}
+                  onClick={() => openBulkEditor(exampleText(0))}
                 >
                   用一段示例试试 <ArrowUpRight size={16} />
                 </button>
@@ -394,11 +548,23 @@ export default function App() {
             <div ref={bottom} />
           </div>
           <div className="chat-insights">
-            <button className="affinity-summary" onClick={() => setDetail("overview")}>
+            <button
+              className="affinity-summary"
+              onClick={() => setDetail("overview")}
+            >
               <span>好感度</span>
-              <strong key={value} className="affinity-number">{value ?? "—"}</strong>
-              {delta != null && delta !== 0 && <small>{delta > 0 ? "+" : ""}{delta}</small>}
-              {value != null && <Heart size={12} fill="currentColor" aria-hidden="true" />}
+              <strong key={value} className="affinity-number">
+                {value ?? "—"}
+              </strong>
+              {delta != null && delta !== 0 && (
+                <small>
+                  {delta > 0 ? "+" : ""}
+                  {delta}
+                </small>
+              )}
+              {value != null && (
+                <Heart size={12} fill="currentColor" aria-hidden="true" />
+              )}
             </button>
             <span className="insight-divider" />
             <button
@@ -421,39 +587,126 @@ export default function App() {
           </div>
           <div className="composer">
             <div className="mobile-import">
-              <button className={!single ? "selected" : ""} onClick={() => setSingle(false)}>整段记录</button>
-              <button className={single ? "selected" : ""} onClick={() => setSingle(true)}>单条消息</button>
-              {single && <select aria-label="这条消息是谁说的" value={singleSender} onChange={e => setSingleSender(e.target.value as "self" | "other")}><option value="other">对方说</option><option value="self">我说</option></select>}
-              <span className="quota-chip">{apiKey.trim() ? "自有 Key" : a.quotaLoading ? "正在读取次数…" : a.freeRemaining == null ? "次数暂不可用" : `今日剩余 ${a.freeRemaining} 次`}</span>
+              <button
+                className={!single ? "selected" : ""}
+                onClick={() => {
+                  setSingle(false);
+                  openBulkEditor();
+                }}
+              >
+                整段记录
+              </button>
+              <button
+                className={single ? "selected" : ""}
+                onClick={() => setSingle(true)}
+              >
+                单条消息
+              </button>
+              {single && (
+                <select
+                  aria-label="这条消息是谁说的"
+                  value={singleSender}
+                  onChange={(e) =>
+                    setSingleSender(e.target.value as "self" | "other")
+                  }
+                >
+                  <option value="other">对方说</option>
+                  <option value="self">我说</option>
+                </select>
+              )}
+              <span className="quota-chip">
+                {apiKey.trim()
+                  ? "自有 Key"
+                  : a.quotaLoading
+                    ? "正在读取次数…"
+                    : a.freeRemaining == null
+                      ? "次数暂不可用"
+                      : `今日剩余 ${a.freeRemaining} 次`}
+              </span>
             </div>
             <div className="wechat-composer-line">
-              <button className="compose-round" aria-label="语音输入提示" onClick={() => setNotice("请先在微信中复制文字，再回到这里粘贴。") }><Mic size={25} /></button>
+              <button
+                className="compose-round"
+                aria-label="语音输入提示"
+                onClick={() =>
+                  setNotice("请先在微信中复制文字，再回到这里粘贴。")
+                }
+              >
+                <Mic size={25} />
+              </button>
               <textarea
                 ref={inputRef}
                 aria-label="粘贴微信聊天记录"
-                placeholder={messages.length ? "粘贴新的聊天记录" : "粘贴微信聊天记录"}
+                placeholder={
+                  messages.length ? "粘贴新的聊天记录" : "粘贴微信聊天记录"
+                }
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onPaste={onPaste}
                 onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitInput();
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
+                    submitInput();
                 }}
               />
-              <button className="compose-round" aria-label="粘贴聊天" onClick={pasteFromPhone}><Smile size={26} /></button>
-              <button className="compose-plus" aria-label="粘贴聊天" onClick={pasteFromPhone}><Plus size={24} /></button>
-              <button className="send" disabled={!input.trim()} onClick={submitInput}>分析</button>
+              <button
+                className="compose-round"
+                aria-label="粘贴聊天"
+                onClick={pasteFromPhone}
+              >
+                <Smile size={26} />
+              </button>
+              <button
+                className="compose-plus"
+                aria-label="粘贴聊天"
+                onClick={pasteFromPhone}
+              >
+                <Plus size={24} />
+              </button>
+              <button
+                className="send"
+                disabled={!input.trim()}
+                onClick={submitInput}
+              >
+                分析
+              </button>
             </div>
             <div className="composer-feedback">
               <span role="status">{notice}</span>{" "}
+              {selfStreak >= 3 && (
+                <span className="space-reminder">
+                  <Sparkles size={12} /> 已连发 {selfStreak} 条，留一点接话空间
+                </span>
+              )}
               <div className="analysis-status" aria-live="polite">
                 {busy ? (
-                  <><span className="working" />正在分析 {a.progress.done}/{a.progress.total}<button onClick={a.cancel}>停止</button></>
+                  <>
+                    <span className="working" />
+                    正在分析 {a.progress.done}/{a.progress.total}
+                    <button onClick={a.cancel}>停止</button>
+                  </>
                 ) : a.status === "error" ? (
-                  <><span>分析未完成</span><button onClick={() => a.run(messages, relation)}><RotateCcw size={14} />重试</button></>
+                  <>
+                    <span>分析未完成</span>
+                    <button onClick={() => a.run(messages, relation)}>
+                      <RotateCcw size={14} />
+                      重试
+                    </button>
+                  </>
                 ) : a.status === "complete" ? (
-                  <span className="completed"><Check size={14} />分析完成<button onClick={() => setDetail("overview")}>娱乐参考</button></span>
+                  <span className="completed">
+                    <Check size={14} />
+                    分析完成
+                    <button onClick={() => setDetail("overview")}>
+                      娱乐参考
+                    </button>
+                  </span>
                 ) : messages.length ? (
-                  <><span>分析已暂停</span><button onClick={() => a.run(messages, relation)}>继续分析</button></>
+                  <>
+                    <span>分析已暂停</span>
+                    <button onClick={() => a.run(messages, relation)}>
+                      继续分析
+                    </button>
+                  </>
                 ) : null}
               </div>
               {a.error && <span className="error">{a.error}</span>}
@@ -461,21 +714,99 @@ export default function App() {
           </div>
         </section>
       </div>
+      {bulkEditing && (
+        <Modal title="粘贴整段聊天" close={() => setBulkEditing(false)}>
+          <p className="bulk-help">
+            可以在这里长按粘贴、补行或修正昵称。每条消息尽量单独一行，例如“我：内容”。
+          </p>
+          <label className="field required-field">
+            当前关系状态（必选）
+            <select
+              value={bulkRelation}
+              onChange={(e) => setBulkRelation(e.target.value as Relation)}
+            >
+              <option value="">请选择当前关系</option>
+              {Object.entries(RELATIONS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            聊天记录
+            <textarea
+              className="bulk-editor"
+              autoFocus
+              value={bulkText}
+              placeholder={"Crush：第一条消息\n我：第二条消息"}
+              onChange={(e) => setBulkText(e.target.value)}
+              onPaste={(e) => {
+                const text = readClipboardData(e.clipboardData);
+                if (!text) return;
+                e.preventDefault();
+                setBulkText(text);
+              }}
+            />
+          </label>
+          <button
+            className="primary"
+            disabled={!bulkText.trim() || !bulkRelation}
+            onClick={confirmBulkEditor}
+          >
+            识别并继续
+          </button>
+        </Modal>
+      )}
       {importing && (
         <Modal title="确认聊天里的你" close={() => setImporting(false)}>
           {names.length === 1 && names[0] === "未分配" ? (
             <>
-              <p className="manual-help">微信没有提供昵称时，请逐条确认发送方。默认按“对方、我”交替排列，可点标签修改。</p>
+              <p className="manual-help">
+                微信没有提供昵称时，请逐条确认发送方。默认按“对方、我”交替排列，可点标签修改。
+              </p>
               <div className="manual-actions">
-                <button onClick={() => setManualSenders(parsed.map((_, index) => index % 2 === 0 ? "other" : "self"))}>首条是对方</button>
-                <button onClick={() => setManualSenders(parsed.map((_, index) => index % 2 === 0 ? "self" : "other"))}>首条是我</button>
+                <button
+                  onClick={() =>
+                    setManualSenders(
+                      parsed.map((_, index) =>
+                        index % 2 === 0 ? "other" : "self",
+                      ),
+                    )
+                  }
+                >
+                  首条是对方
+                </button>
+                <button
+                  onClick={() =>
+                    setManualSenders(
+                      parsed.map((_, index) =>
+                        index % 2 === 0 ? "self" : "other",
+                      ),
+                    )
+                  }
+                >
+                  首条是我
+                </button>
               </div>
               <div className="manual-lines" aria-label="逐条确认发送方">
                 {parsed.map((message, index) => (
                   <div className="manual-line" key={`${index}-${message.text}`}>
                     <button
-                      className={manualSenders[index] === "self" ? "self" : "other"}
-                      onClick={() => setManualSenders((old) => old.map((sender, i) => i === index ? (sender === "self" ? "other" : "self") : sender))}
+                      className={
+                        manualSenders[index] === "self" ? "self" : "other"
+                      }
+                      onClick={() =>
+                        setManualSenders((old) =>
+                          old.map((sender, i) =>
+                            i === index
+                              ? sender === "self"
+                                ? "other"
+                                : "self"
+                              : sender,
+                          ),
+                        )
+                      }
                     >
                       {manualSenders[index] === "self" ? "我" : "对方"}
                     </button>
@@ -483,79 +814,116 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <button className="primary" disabled={!parsed.length} onClick={confirmManualImport}>按以上顺序分析</button>
-            </>
-          ) : <>
-          <div className="role-options">
-            {names
-              .filter((n) => n !== "未分配")
-              .map((n) => (
-                <button
-                  className={role === n ? "selected" : ""}
-                  key={n}
-                  onClick={() => setRole(n)}
-                >
-                  {n}
-                </button>
-              ))}
-            {names.length === 1 && (
               <button
-                className={role === "__self_absent__" ? "selected" : ""}
-                onClick={() => setRole("__self_absent__")}
+                className="primary"
+                disabled={!parsed.length}
+                onClick={confirmManualImport}
               >
-                这些都是对方的话
+                按以上顺序分析
               </button>
-            )}
-          </div>
-          <label className="field">
-            识别到 {parsed.length} 条聊天
-            <textarea
-              value={raw}
-              onChange={(e) => {
-                setRaw(e.target.value);
-                const next = parseChat(e.target.value).messages;
-                setParsed(next);
-                setManualSenders(next.map((_, index) => index % 2 === 0 ? "other" : "self"));
-              }}
-            />
-          </label>
-          {(names.length > 2 || names.includes("未分配")) && (
-            <p className="error">
-              单条复制的纯文字请关闭此窗口，选择「单条消息」。整段导入请保留两个人的聊天，可改成「我：内容」「对方：内容」。
-            </p>
+            </>
+          ) : (
+            <>
+              <div className="role-options">
+                {names
+                  .filter((n) => n !== "未分配")
+                  .map((n) => (
+                    <button
+                      className={role === n ? "selected" : ""}
+                      key={n}
+                      onClick={() => setRole(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                {names.length === 1 && (
+                  <button
+                    className={role === "__self_absent__" ? "selected" : ""}
+                    onClick={() => setRole("__self_absent__")}
+                  >
+                    这些都是对方的话
+                  </button>
+                )}
+              </div>
+              <label className="field">
+                识别到 {parsed.length} 条聊天
+                <textarea
+                  value={raw}
+                  onChange={(e) => {
+                    setRaw(e.target.value);
+                    const next = parseChat(e.target.value).messages;
+                    setParsed(next);
+                    setManualSenders(
+                      next.map((_, index) =>
+                        index % 2 === 0 ? "other" : "self",
+                      ),
+                    );
+                  }}
+                />
+              </label>
+              {(names.length > 2 || names.includes("未分配")) && (
+                <p className="error">
+                  单条复制的纯文字请关闭此窗口，选择「单条消息」。整段导入请保留两个人的聊天，可改成「我：内容」「对方：内容」。
+                </p>
+              )}
+              <button
+                className="primary"
+                disabled={
+                  !role ||
+                  !parsed.length ||
+                  names.length > 2 ||
+                  names.includes("未分配") ||
+                  (!names.includes(role) && role !== "__self_absent__")
+                }
+                onClick={confirmImport}
+              >
+                开始分析
+              </button>
+            </>
           )}
-          <button
-            className="primary"
-            disabled={
-              !role ||
-              !parsed.length ||
-              names.length > 2 ||
-              names.includes("未分配") ||
-              (!names.includes(role) && role !== "__self_absent__")
-            }
-            onClick={confirmImport}
-          >
-            开始分析
-          </button>
-          </>}
         </Modal>
       )}
       {settings && (
         <Modal title="聊天设置" close={() => setSettings(false)}>
-          <label className="field">自己的 TypeSafe API Key（可选）
-            <input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => {setApiKey(e.target.value); connection.key = e.target.value; a.reset();}} placeholder="不填写可每天免费分析 10 次" />
+          <label className="field">
+            自己的 TypeSafe API Key（可选）
+            <input
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={draftKey}
+              onChange={(e) => setDraftKey(e.target.value)}
+              placeholder="不填写可每天免费分析 10 次"
+            />
           </label>
-          <p>未填写时，同一公网 IP 每天可免费分析 10 次；填写自己的 Key 后不限制本站次数，只消耗你自己的 TypeSafe 额度。Key 只保留在当前页面内存中，刷新即清空。</p>
-          {connection.endpoint ? <p className="service-ready"><Check size={15} /> 分析服务已连接</p> : <div className="connection-settings"><p>部署者设置</p><label className="field">分析服务 HTTPS 地址<input type="url" value={endpoint} placeholder="https://你的服务/api/analyze" onChange={e => {setEndpoint(e.target.value); connection.endpoint = e.target.value.trim(); a.reset();}} /></label></div>}
+          <p>
+            未填写时，同一公网 IP 每天可免费分析 10 次；填写自己的 Key
+            后不限制本站次数，只消耗你自己的 TypeSafe 额度。Key
+            只保留在当前页面内存中，刷新即清空。
+          </p>
+          {connection.endpoint ? (
+            <p className="service-ready">
+              <Check size={15} /> 分析服务已连接
+            </p>
+          ) : (
+            <div className="connection-settings">
+              <p>部署者设置</p>
+              <label className="field">
+                分析服务 HTTPS 地址
+                <input
+                  type="url"
+                  value={draftEndpoint}
+                  placeholder="https://你的服务/api/analyze"
+                  onChange={(e) => setDraftEndpoint(e.target.value)}
+                />
+              </label>
+            </div>
+          )}
           <label className="field">
             你们的关系
             <select
-              value={relation}
-              onChange={(e) => {
-                const r = e.target.value as Relation;
-                setRelation(r);
-                if (messages.length) a.run(messages, r);
-              }}
+              value={draftRelation}
+              onChange={(e) => setDraftRelation(e.target.value as Relation)}
             >
               {Object.entries(RELATIONS).map(([k, v]) => (
                 <option value={k} key={k}>
@@ -564,6 +932,9 @@ export default function App() {
               ))}
             </select>
           </label>
+          <button className="primary" onClick={saveSettings}>
+            保存设置
+          </button>
           <button
             className="secondary"
             disabled={!messages.length}
@@ -586,7 +957,9 @@ export default function App() {
           <button className="secondary danger" onClick={clear}>
             清空聊天，重新开始
           </button>
-          <p>聊天只保留在当前页面，分析时发送给模型服务。</p>
+          <p>
+            聊天仅暂存在当前浏览器标签页，用于刷新恢复；清空聊天或关闭会话后即可移除。分析时会发送给模型服务。
+          </p>
         </Modal>
       )}
       {detail === "clear" && (

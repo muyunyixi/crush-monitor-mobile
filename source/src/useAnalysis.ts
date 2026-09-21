@@ -1,4 +1,9 @@
-import { requestAnalysis, requestQuota, validateConnection, type AnalysisResult } from "./transport";
+import {
+  requestAnalysis,
+  requestQuota,
+  validateConnection,
+  type AnalysisResult,
+} from "./transport";
 import { connection } from "./connection";
 import { useRef, useState } from "react";
 import {
@@ -82,12 +87,19 @@ export function useAnalysis() {
     setOverviewFresh(false);
     setError("");
     setCurrentIds(new Set());
-    try { validateConnection(connection); }
-    catch (e) { setError((e as Error).message); setStatus("error"); return; }
+    try {
+      validateConnection(connection);
+    } catch (e) {
+      setError((e as Error).message);
+      setStatus("error");
+      return;
+    }
     const config = { ...connection };
     const runId = crypto.randomUUID();
     let nextOverview: Overview | null = null;
-    const nextLines: Record<string, LineResult> = {};
+    // Keep completed judgments visible if an appended batch is interrupted or fails.
+    // This mirrors the useful incremental-history behavior introduced upstream in v1.1.0.
+    const nextLines: Record<string, LineResult> = { ...lines };
     let failures = 0;
     let done = 0;
     const task = (
