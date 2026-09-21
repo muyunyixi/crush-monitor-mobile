@@ -8,7 +8,7 @@
 2. 解压交付 ZIP，将 `deploy` 文件夹**里面**的 index.html、favicon.svg、.nojekyll 和 LICENSE 上传到仓库根目录。不要把整个 ZIP 上传。
 3. 在仓库 Settings → Pages → Build and deployment 选择 Deploy from a branch，分支 main，目录 / (root)，保存。
 4. 等待 Pages 显示网址，用手机 Safari 或 Chrome 打开。地址通常是 https://你的用户名.github.io/crush-monitor-mobile/ 。
-5. 先部署下文的转发服务，再在右上角「…」填写转发地址和自己的 TypeSafe API Key。不要把 Key 放进 GitHub 文件或截图中。
+5. 先部署下文的转发服务，并在构建时配置它的公开地址。访客无需填写 Key，每个公网 IP 每天可免费分析 10 次；也可在右上角「…」填写自己的 TypeSafe API Key 后不受本站次数限制。
 
 ## 手机上如何粘贴
 
@@ -29,7 +29,7 @@
 
 GitHub Pages 只托管静态网页。TypeSafe 不接受当前网页来源的跨域直连，因此分析必须经过你控制的后端转发服务。网页不再直接请求 TypeSafe，连接失败会停止剩余分析任务。
 
-Key 和聊天只保存在页面内存中，刷新后清空。分析时会发送给你配置的转发服务，再由服务调用 TypeSafe。只填写自己控制或信任的服务地址。
+访客未填写 Key 时，Worker 使用部署者保存在 Cloudflare Secret 中的 `TYPESAFE_API_KEY`；填写个人 Key 时仅在当前页面内存中保留，刷新后清空。分析时聊天会发送给该 Worker，再由 Worker 调用 TypeSafe。
 
 ## 部署转发服务（必需）
 
@@ -37,10 +37,11 @@ Key 和聊天只保存在页面内存中，刷新后清空。分析时会发送�
 
 1. 在 source 目录执行 `npm ci`。
 2. wrangler.toml 的 ALLOWED_ORIGIN 已设为 https://muyunyixi.github.io 。更换 Pages 账号时需相应修改，不含仓库路径。
-3. 在自己的 Cloudflare 账号登录 Wrangler，运行 `npx wrangler deploy`。
-4. 在网页右上角设置填写 https://你的-worker地址/api/analyze 和个人 TypeSafe API Key。
+3. 在 Cloudflare 设置 Secret：`npx wrangler secret put TYPESAFE_API_KEY`。
+4. 运行 `npx wrangler deploy`。配置会同时创建 SQLite Durable Object，用于按公网 IP 原子统计每日免费次数。
+5. 构建前设置 `VITE_ANALYSIS_ENDPOINT=https://你的-worker地址/api/analyze`，再运行 `npm run build`。
 
-Worker 不内置公共 Key，不主动记录聊天。Origin 校验不能代替身份认证，不应在此公开服务中放置共享密钥。
+一次完整分析虽然会拆成多次模型请求，但只扣 1 次免费额度。同一公网 IP 的免费次数在 UTC 00:00 按新日期重新计算。Worker 不把公共 Key写入网页，也不主动记录聊天。
 
 ## 构建与发布
 
@@ -49,7 +50,7 @@ Worker 不内置公共 Key，不主动记录聊天。Origin 校验不能代替�
 本地开发：`npx vite --host 127.0.0.1`。
 测试：`node --import tsx --test tests/*.test.ts`。
 
-已通过 TypeScript 构建及 28 项测试，覆盖缺少转发地址时不发送请求、跨域预检及错误响应。真实模型调用必须在后端部署后另行验证；测试通过不代表服务已经上线。
+已通过 TypeScript 构建及 30 项测试，覆盖无 Key 免费流程、单批次只扣一次、第 11 次限流、跨域预检与错误响应。真实模型调用仍需在 Worker 更新后验证。
 
 ## 分析含义
 

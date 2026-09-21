@@ -1,4 +1,4 @@
-import { requestAnalysis, validateConnection } from "./transport";
+import { requestAnalysis, validateConnection, type AnalysisResult } from "./transport";
 import { connection } from "./connection";
 import { useRef, useState } from "react";
 import {
@@ -9,7 +9,6 @@ import {
   type Snapshot,
   type Overview,
   type LineResult,
-  type AnalysisResponse,
   type AnalysisRequest,
 } from "../shared/types";
 export function useAnalysis() {
@@ -22,11 +21,12 @@ export function useAnalysis() {
     [error, setError] = useState(""),
     [history, setHistory] = useState<Snapshot[]>([]),
     [progress, setProgress] = useState({ done: 0, total: 0 }),
+    [freeRemaining, setFreeRemaining] = useState<number | null>(null),
     [latency, setLatency] = useState(0),
     [currentIds, setCurrentIds] = useState<Set<string>>(new Set());
   const rev = useRef(0),
     controller = useRef<AbortController | null>(null),
-    cache = useRef(new Map<string, AnalysisResponse>()),
+    cache = useRef(new Map<string, AnalysisResult>()),
     historyRef = useRef<Snapshot[]>([]);
   function cancel() {
     rev.current++;
@@ -43,6 +43,7 @@ export function useAnalysis() {
     setLines({});
     setError("");
     setLatency(0);
+    setFreeRemaining(null);
     setCurrentIds(new Set());
   }
   function showFixture(s: Snapshot) {
@@ -68,6 +69,7 @@ export function useAnalysis() {
     try { validateConnection(connection); }
     catch (e) { setError((e as Error).message); setStatus("error"); return; }
     const config = { ...connection };
+    const runId = crypto.randomUUID();
     let nextOverview: Overview | null = null;
     const nextLines: Record<string, LineResult> = {};
     let failures = 0;
@@ -111,7 +113,9 @@ export function useAnalysis() {
         contextKey(job.messages, relation) + job.task + job.targetIds.join(",");
       let result = cache.current.get(key);
       if (!result) {
-        result = await requestAnalysis(job, config, ctrl.signal);
+        result = await requestAnalysis(job, config, ctrl.signal, runId);
+        if (typeof result.freeRemaining === "number")
+          setFreeRemaining(result.freeRemaining);
         if (result.revision !== revision)
           throw new Error("分析批次不匹配，请重试");
         const digest = await crypto.subtle.digest(
@@ -201,6 +205,7 @@ export function useAnalysis() {
     clearError: () => setError(""),
     history,
     progress,
+    freeRemaining,
     latency,
     currentIds,
     run,

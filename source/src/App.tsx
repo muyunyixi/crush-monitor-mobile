@@ -7,13 +7,13 @@ import {
   Heart,
   MoreHorizontal,
   X,
+  ArrowLeft,
   ArrowUpRight,
   RotateCcw,
-  MessageCircle,
-  Settings2,
   Plus,
   ArrowRight,
-  Send,
+  Mic,
+  Smile,
   Check,
 } from "lucide-react";
 import {
@@ -217,73 +217,21 @@ export default function App() {
     <main className="app">
       <div className="workspace">
         <section className="wechat" aria-label="微信聊天">
-          <nav className="chat-rail" aria-label="聊天工具">
-            <div className="rail-avatar">
-              {self && self !== "__self_absent__" ? self.slice(0, 1) : "我"}
-            </div>
-            <button
-              className="rail-active"
-              aria-label="滚动到最新聊天"
-              onClick={() => {
-                const el = bottom.current?.parentElement;
-                el?.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-              }}
-            >
-              <MessageCircle size={23} />
-            </button>
-            <button
-              className="rail-settings"
-              aria-label="聊天设置"
-              onClick={() => setSettings(true)}
-            >
-              <Settings2 size={22} />
-            </button>
-          </nav>
           <header className="chat-head">
+            <button
+              className="chat-back"
+              aria-label="开始新聊天"
+              onClick={() => messages.length ? setDetail("clear") : setSettings(true)}
+            >
+              <ArrowLeft size={31} strokeWidth={1.8} />
+            </button>
             <div className="contact-title">
-              <h2>{messages.length ? other : "微信聊天"}</h2>
+              <h2>{messages.length ? other : "聊天分析"}</h2>
               <span>{RELATIONS[relation]}</span>
             </div>
-            <button
-              className="header-affinity"
-              onClick={() => setDetail("overview")}
-              aria-label="查看好感度详情"
-            >
-              <span>好感度</span>
-              <strong key={value} className="affinity-number">
-                {value ?? "—"}
-              </strong>
-              {value != null && (
-                <span className="affinity-hearts" aria-hidden="true">
-                  <Heart className="affinity-heart heart-one" size={12} />
-                  <Heart className="affinity-heart heart-two" size={9} />
-                  <Heart className="affinity-heart heart-three" size={7} />
-                </span>
-              )}
-              {delta != null && delta !== 0 && (
-                <small>
-                  {delta > 0 ? "+" : ""}
-                  {delta}
-                </small>
-              )}
+            <button className="chat-more" aria-label="更多聊天设置" onClick={() => setSettings(true)}>
+              <MoreHorizontal size={29} strokeWidth={2} />
             </button>
-            <div className="header-tools">
-              <button
-                className="icon"
-                aria-label="新聊天"
-                title="新聊天"
-                onClick={() => setDetail("clear")}
-              >
-                <Plus size={20} />
-              </button>
-              <button
-                className="icon"
-                aria-label="更多聊天设置"
-                onClick={() => setSettings(true)}
-              >
-                <MoreHorizontal size={24} />
-              </button>
-            </div>
           </header>
           <div
             className="chat-scroll"
@@ -417,6 +365,13 @@ export default function App() {
             <div ref={bottom} />
           </div>
           <div className="chat-insights">
+            <button className="affinity-summary" onClick={() => setDetail("overview")}>
+              <span>好感度</span>
+              <strong key={value} className="affinity-number">{value ?? "—"}</strong>
+              {delta != null && delta !== 0 && <small>{delta > 0 ? "+" : ""}{delta}</small>}
+              {value != null && <Heart size={12} fill="currentColor" aria-hidden="true" />}
+            </button>
+            <span className="insight-divider" />
             <button
               className="reply-summary"
               onClick={() => setDetail("performance")}
@@ -440,67 +395,37 @@ export default function App() {
               <button className={!single ? "selected" : ""} onClick={() => setSingle(false)}>整段记录</button>
               <button className={single ? "selected" : ""} onClick={() => setSingle(true)}>单条消息</button>
               {single && <select aria-label="这条消息是谁说的" value={singleSender} onChange={e => setSingleSender(e.target.value as "self" | "other")}><option value="other">对方说</option><option value="self">我说</option></select>}
-              <button onClick={pasteFromPhone}>粘贴</button>
+              <span className="quota-chip">{apiKey.trim() ? "自有 Key" : a.freeRemaining == null ? "每日免费 10 次" : `今日剩余 ${a.freeRemaining} 次`}</span>
             </div>
-            <textarea
-              aria-label="粘贴微信聊天记录"
-              placeholder={
-                messages.length
-                  ? "粘贴新的聊天，自动合并重复记录"
-                  : "在这里粘贴微信聊天记录…"
-              }
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
-                  submitInput();
-              }}
-            />
-            <div className="composer-bottom">
-              <div className="composer-feedback">
-                <span role="status">{notice}</span>{" "}
-                <div className="analysis-status" aria-live="polite">
-                  {busy ? (
-                    <>
-                      <span className="working" />
-                      正在分析 {a.progress.done}/{a.progress.total}
-                      <button onClick={a.cancel}>停止</button>
-                    </>
-                  ) : a.status === "error" ? (
-                    <>
-                      <span>分析未完成</span>
-                      <button onClick={() => a.run(messages, relation)}>
-                        <RotateCcw size={14} />
-                        重试
-                      </button>
-                    </>
-                  ) : a.status === "complete" ? (
-                    <span className="completed">
-                      <Check size={14} />
-                      分析完成
-                      <button onClick={() => setDetail("overview")}>
-                        娱乐参考
-                      </button>
-                    </span>
-                  ) : messages.length ? (
-                    <>
-                      <span>分析已暂停</span>
-                      <button onClick={() => a.run(messages, relation)}>
-                        继续分析
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-                {a.error && <span className="error">{a.error}</span>}
+            <div className="wechat-composer-line">
+              <button className="compose-round" aria-label="语音输入提示" onClick={() => setNotice("请先在微信中复制文字，再回到这里粘贴。") }><Mic size={25} /></button>
+              <textarea
+                aria-label="粘贴微信聊天记录"
+                placeholder={messages.length ? "粘贴新的聊天记录" : "粘贴微信聊天记录"}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submitInput();
+                }}
+              />
+              <button className="compose-round" aria-label="粘贴聊天" onClick={pasteFromPhone}><Smile size={26} /></button>
+              <button className="compose-plus" aria-label="粘贴聊天" onClick={pasteFromPhone}><Plus size={24} /></button>
+              <button className="send" disabled={!input.trim()} onClick={submitInput}>分析</button>
+            </div>
+            <div className="composer-feedback">
+              <span role="status">{notice}</span>{" "}
+              <div className="analysis-status" aria-live="polite">
+                {busy ? (
+                  <><span className="working" />正在分析 {a.progress.done}/{a.progress.total}<button onClick={a.cancel}>停止</button></>
+                ) : a.status === "error" ? (
+                  <><span>分析未完成</span><button onClick={() => a.run(messages, relation)}><RotateCcw size={14} />重试</button></>
+                ) : a.status === "complete" ? (
+                  <span className="completed"><Check size={14} />分析完成<button onClick={() => setDetail("overview")}>娱乐参考</button></span>
+                ) : messages.length ? (
+                  <><span>分析已暂停</span><button onClick={() => a.run(messages, relation)}>继续分析</button></>
+                ) : null}
               </div>
-              <button
-                className="send"
-                disabled={!input.trim()}
-                onClick={submitInput}
-              >
-                <Send size={15} />
-                分析聊天
-              </button>
+              {a.error && <span className="error">{a.error}</span>}
             </div>
           </div>
         </section>
@@ -560,15 +485,11 @@ export default function App() {
       )}
       {settings && (
         <Modal title="聊天设置" close={() => setSettings(false)}>
-          <label className="field">TypeSafe API Key
-            <input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => {setApiKey(e.target.value); connection.key = e.target.value; a.reset();}} placeholder="输入自己的 API Key" />
+          <label className="field">自己的 TypeSafe API Key（可选）
+            <input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={e => {setApiKey(e.target.value); connection.key = e.target.value; a.reset();}} placeholder="不填写可每天免费分析 10 次" />
           </label>
-          <p>密钥和聊天只在当前页面内存中保留，刷新即清空。点击分析会经你配置的转发服务把聊天发送至 TypeSafe，并使用你的 API 额度。</p>
-          <div className="connection-settings"><p>分析需要转发服务：TypeSafe 不允许网页直接调用。</p>
-            <label className="field">自建分析服务 HTTPS 地址
-              <input type="url" value={endpoint} placeholder="https://你的服务/api/analyze" onChange={e => {setEndpoint(e.target.value); connection.endpoint = e.target.value.trim(); a.reset();}} />
-            </label><p>仅填写自己控制或信任的服务；该服务会接收聊天和密钥。</p>
-          </div>
+          <p>未填写时，同一公网 IP 每天可免费分析 10 次；填写自己的 Key 后不限制本站次数，只消耗你自己的 TypeSafe 额度。Key 只保留在当前页面内存中，刷新即清空。</p>
+          {connection.endpoint ? <p className="service-ready"><Check size={15} /> 分析服务已连接</p> : <div className="connection-settings"><p>部署者设置</p><label className="field">分析服务 HTTPS 地址<input type="url" value={endpoint} placeholder="https://你的服务/api/analyze" onChange={e => {setEndpoint(e.target.value); connection.endpoint = e.target.value.trim(); a.reset();}} /></label></div>}
           <label className="field">
             你们的关系
             <select

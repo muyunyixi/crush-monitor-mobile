@@ -1038,8 +1038,8 @@ var ZodIssueCode = util.arrayToEnum([
   "not_finite"
 ]);
 var quotelessJson = (obj) => {
-  const json = JSON.stringify(obj, null, 2);
-  return json.replace(/"([^"]+)":/g, "$1:");
+  const json2 = JSON.stringify(obj, null, 2);
+  return json2.replace(/"([^"]+)":/g, "$1:");
 };
 var ZodError = class _ZodError extends Error {
   get errors() {
@@ -5152,42 +5152,112 @@ async function analyze(input, signal, apiKey) {
 }
 
 // worker/index.ts
+var FREE_DAILY_LIMIT = 10;
+var UsageLimiter = class {
+  constructor(state) {
+    this.state = state;
+  }
+  state;
+  async fetch(request) {
+    const { date, runId } = await request.json();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || !runId || runId.length > 128)
+      return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
+    let usage = await this.state.storage.get("usage");
+    if (!usage || usage.date !== date) usage = { date, runIds: [] };
+    if (usage.runIds.includes(runId))
+      return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
+    if (usage.runIds.length >= FREE_DAILY_LIMIT)
+      return Response.json({ allowed: false, remaining: 0 }, { status: 429 });
+    usage.runIds.push(runId);
+    await this.state.storage.put("usage", usage);
+    return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
+  }
+};
+async function sha256(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function reserveFreeUse(request, env, runId) {
+  if (!env.USAGE_LIMITER)
+    return { allowed: false, remaining: 0, unavailable: true };
+  const ipHash = await sha256(request.headers.get("CF-Connecting-IP") || "unknown");
+  const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(ipHash));
+  const response = await stub.fetch(
+    new Request("https://usage.internal/reserve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10), runId })
+    })
+  );
+  const data = await response.json();
+  return {
+    allowed: response.ok && data.allowed === true,
+    remaining: Math.max(0, Number(data.remaining) || 0),
+    unavailable: false
+  };
+}
+function json(body, status, headers) {
+  return new Response(JSON.stringify(body), { status, headers });
+}
 var index_default = {
   async fetch(request, env) {
     const origin = request.headers.get("Origin");
-    if (!env.ALLOWED_ORIGIN || origin !== env.ALLOWED_ORIGIN) return new Response("Forbidden", { status: 403 });
+    if (!env.ALLOWED_ORIGIN || origin !== env.ALLOWED_ORIGIN)
+      return new Response("Forbidden", { status: 403 });
     const headers = {
       "Access-Control-Allow-Origin": origin,
       "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Authorization, Content-Type",
-      "Vary": "Origin",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Analysis-Run",
+      "Access-Control-Expose-Headers": "X-Free-Limit, X-Free-Remaining",
+      Vary: "Origin",
       "Cache-Control": "no-store",
       "Content-Type": "application/json"
     };
-    if (request.method === "GET" && new URL(request.url).pathname === "/health") return new Response(JSON.stringify({ ok: true, service: "crush-monitor-api" }), { headers });
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health")
+      return json({ ok: true, service: "crush-monitor-api", freeDailyLimit: FREE_DAILY_LIMIT }, 200, headers);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
-    if (request.method !== "POST" || new URL(request.url).pathname !== "/api/analyze") return new Response("{}", { status: 404, headers });
-    const auth = request.headers.get("Authorization") || "";
-    const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-    if (!key) return new Response(JSON.stringify({ error: "\u7F3A\u5C11 API Key" }), { status: 401, headers });
+    if (request.method !== "POST" || url.pathname !== "/api/analyze")
+      return json({}, 404, headers);
     try {
       const body = await request.text();
-      if (body.length > 2e5) return new Response(JSON.stringify({ error: "\u804A\u5929\u8FC7\u957F" }), { status: 413, headers });
+      if (body.length > 2e5) return json({ error: "\u804A\u5929\u8FC7\u957F" }, 413, headers);
       const input = requestSchema.safeParse(JSON.parse(body));
-      if (!input.success) return new Response(JSON.stringify({ error: "\u804A\u5929\u683C\u5F0F\u4E0D\u6B63\u786E\u6216\u8D85\u51FA\u8303\u56F4" }), { status: 400, headers });
+      if (!input.success)
+        return json({ error: "\u804A\u5929\u683C\u5F0F\u4E0D\u6B63\u786E\u6216\u8D85\u51FA\u8303\u56F4" }, 400, headers);
+      const auth = request.headers.get("Authorization") || "";
+      const personalKey = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      let key = personalKey;
+      if (!personalKey) {
+        const runId = (request.headers.get("X-Analysis-Run") || "").trim();
+        if (!runId || runId.length > 128)
+          return json({ error: "\u7F3A\u5C11\u5206\u6790\u6279\u6B21\u7F16\u53F7\uFF0C\u8BF7\u5237\u65B0\u7F51\u9875\u540E\u91CD\u8BD5\u3002" }, 400, headers);
+        if (!env.TYPESAFE_API_KEY)
+          return json({ error: "\u514D\u8D39\u5206\u6790\u670D\u52A1\u5C1A\u672A\u914D\u7F6E\uFF0C\u8BF7\u586B\u5199\u81EA\u5DF1\u7684 TypeSafe API Key\u3002" }, 503, headers);
+        const quota = await reserveFreeUse(request, env, runId);
+        if (quota.unavailable)
+          return json({ error: "\u514D\u8D39\u6B21\u6570\u670D\u52A1\u5C1A\u672A\u90E8\u7F72\uFF0C\u8BF7\u586B\u5199\u81EA\u5DF1\u7684 TypeSafe API Key\u3002" }, 503, headers);
+        headers["X-Free-Limit"] = String(FREE_DAILY_LIMIT);
+        headers["X-Free-Remaining"] = String(quota.remaining);
+        if (!quota.allowed)
+          return json({ error: "\u4ECA\u5929\u7684 10 \u6B21\u514D\u8D39\u5206\u6790\u5DF2\u7528\u5B8C\u3002\u586B\u5199\u81EA\u5DF1\u7684 TypeSafe API Key \u540E\u53EF\u7EE7\u7EED\u4F7F\u7528\u3002" }, 429, headers);
+        key = env.TYPESAFE_API_KEY;
+      }
       const result = await analyze(input.data, request.signal, key);
-      return new Response(JSON.stringify(result), { headers });
+      return json(result, 200, headers);
     } catch (error) {
-      if (error instanceof SyntaxError) return new Response(JSON.stringify({ error: "\u8BF7\u6C42\u4E0D\u662F\u6709\u6548 JSON" }), { status: 400, headers });
+      if (error instanceof SyntaxError)
+        return json({ error: "\u8BF7\u6C42\u4E0D\u662F\u6709\u6548 JSON" }, 400, headers);
       if (error instanceof APIError && [401, 403, 429].includes(error.status ?? 0)) {
         const status = error.status;
         const message = status === 429 ? "\u6A21\u578B\u8C03\u7528\u53D7\u9650\uFF1A\u8BF7\u68C0\u67E5\u989D\u5EA6\u6216\u7A0D\u540E\u91CD\u8BD5\u3002" : "TypeSafe \u62D2\u7EDD\u4E86\u6B64\u5BC6\u94A5\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u53CA\u8BBF\u95EE\u6743\u9650\u3002";
-        return new Response(JSON.stringify({ error: message }), { status, headers });
+        return json({ error: message }, status, headers);
       }
-      return new Response(JSON.stringify({ error: "\u6A21\u578B\u8C03\u7528\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u3001\u989D\u5EA6\u4E0E\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002" }), { status: 502, headers });
+      return json({ error: "\u6A21\u578B\u8C03\u7528\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u5BC6\u94A5\u3001\u989D\u5EA6\u4E0E\u7F51\u7EDC\u540E\u91CD\u8BD5\u3002" }, 502, headers);
     }
   }
 };
 export {
+  UsageLimiter,
   index_default as default
 };

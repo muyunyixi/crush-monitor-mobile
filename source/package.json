@@ -35,7 +35,7 @@
     "vite": "^6.3.0"
   },
   "license": "MIT",
-  "description": "Local-first WeChat-style conversation analysis powered by your own Jev API key",
+  "description": "Mobile WeChat-style conversation analysis with optional personal TypeSafe API keys",
   "engines": {
     "node": ">=22.12.0"
   }
