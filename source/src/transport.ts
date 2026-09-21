@@ -11,6 +11,7 @@ export function validateConnection(config: ConnectionConfig) {
 export type AnalysisResult = AnalysisResponse & { freeRemaining?: number };
 export async function requestAnalysis(job: AnalysisRequest, config: ConnectionConfig, signal: AbortSignal, runId: string): Promise<AnalysisResult> {
   const endpoint = validateConnection(config);
+  if (endpoint.pathname === '/' || endpoint.pathname === '') endpoint.pathname = '/api/analyze';
   let response: Response;
   try {
     const headers: Record<string, string> = {
