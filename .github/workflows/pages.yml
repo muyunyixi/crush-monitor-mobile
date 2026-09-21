@@ -3,23 +3,22 @@ name: Deploy Worker and mobile web
 on:
   push:
     branches: [main]
+    paths:
+      - "source/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: production-deploy
   cancel-in-progress: true
 
 jobs:
-  worker:
-    name: Deploy Cloudflare Worker
+  deploy:
+    name: Deploy Worker and publish verified web build
     runs-on: ubuntu-latest
-    outputs:
-      endpoint: ${{ steps.deploy.outputs.deployment-url }}
     steps:
       - uses: actions/checkout@v4
       - name: Deploy Worker and quota storage
@@ -28,6 +27,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: 5eb927b5a24c6e2c274c2ad3a25162d5
+          workingDirectory: source
           wranglerVersion: "4"
           command: deploy
       - name: Verify Worker health endpoint
@@ -38,32 +38,29 @@ jobs:
           curl --fail --silent --show-error \
             -H "Origin: https://muyunyixi.github.io" \
             "$WORKER_ENDPOINT/health"
-
-  pages:
-    name: Test, build and deploy GitHub Pages
-    needs: worker
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: source/package-lock.json
       - run: npm ci
+        working-directory: source
       - run: node --import tsx --test tests/*.test.ts
+        working-directory: source
       - name: Build with deployed Worker endpoint
         env:
-          VITE_ANALYSIS_ENDPOINT: ${{ needs.worker.outputs.endpoint }}
+          VITE_ANALYSIS_ENDPOINT: ${{ steps.deploy.outputs.deployment-url }}
+        working-directory: source
         run: |
           test -n "$VITE_ANALYSIS_ENDPOINT"
           npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - name: Deploy GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish verified build to the Pages branch root
+        run: |
+          cp source/dist/index.html index.html
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          if ! git diff --cached --quiet; then
+            git commit -m "deploy: publish verified Worker endpoint"
+            git push
+          fi
