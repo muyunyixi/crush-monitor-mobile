@@ -6,7 +6,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type ClipboardEvent as ReactClipboardEvent,
   type ReactNode,
 } from "react";
 import {
@@ -43,14 +42,73 @@ import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
 import {
   normalizeClipboardText,
-  readClipboardData,
-  readClipboardPaste,
   readClipboardText,
 } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
+
+function moveCaretToEnd(element: HTMLElement) {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function RichPasteEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const receivingRichPaste = useRef(false);
+
+  useEffect(() => {
+    const editor = ref.current;
+    if (editor && editor.innerText !== value) editor.textContent = value;
+  }, [value]);
+
+  return (
+    <div
+      ref={ref}
+      className="bulk-editor rich-paste-editor"
+      contentEditable
+      suppressContentEditableWarning
+      role="textbox"
+      aria-label="聊天记录"
+      aria-multiline="true"
+      data-placeholder="Crush：第一条消息\A我：第二条消息"
+      onPaste={() => {
+        // Do not prevent the native paste. WeChat puts the full selection in
+        // its rich clipboard representation on some phones, while text/plain
+        // contains only the first message. A contenteditable surface lets the
+        // browser insert that complete representation first.
+        receivingRichPaste.current = true;
+      }}
+      onInput={(event) => {
+        const editor = event.currentTarget;
+        const text = editor.innerText
+          .replace(/\r\n?|\u2028|\u2029/g, "\n")
+          .replace(/\u00a0/g, " ");
+        if (receivingRichPaste.current) {
+          receivingRichPaste.current = false;
+          // Remove pasted markup immediately after the browser has converted
+          // it to visible text. This prevents styles, images and links from
+          // remaining in the editor while keeping every pasted message.
+          editor.textContent = text;
+          moveCaretToEnd(editor);
+        }
+        onChange(text);
+      }}
+    />
+  );
+}
 
 function Modal({
   title,
@@ -84,7 +142,7 @@ function Modal({
       if (e.key === "Tab") {
         const nodes = Array.from(
           ref.current?.querySelectorAll<HTMLElement>(
-            "button:not(:disabled),select,textarea,input",
+            'button:not(:disabled),select,textarea,input,[contenteditable="true"]',
           ) || [],
         );
         if (e.shiftKey && document.activeElement === nodes[0]) {
@@ -848,11 +906,9 @@ export default function App() {
           </label>
           <label className="field">
             聊天记录
-            <textarea
-              className="bulk-editor"
+            <RichPasteEditor
               value={bulkText}
-              placeholder={"Crush：第一条消息\n我：第二条消息"}
-              onChange={(e) => updateBulkText(e.target.value)}
+              onChange={updateBulkText}
             />
           </label>
           <div className="import-tools">
