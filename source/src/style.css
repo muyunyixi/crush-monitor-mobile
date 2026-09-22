@@ -1603,3 +1603,204 @@ body {
   color: #797269;
   line-height: 1.55;
 }
+
+/* Compact viewport-aware dialogs; only long text/results scroll internally. */
+.overlay {
+  padding: 10px;
+  height: var(--dialog-vh, 100dvh);
+  top: var(--dialog-top, 0px);
+  bottom: auto;
+}
+.modal {
+  max-height: calc(var(--dialog-vh, 100dvh) - 20px);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.modal > header {
+  flex: none;
+  margin-bottom: 10px;
+}
+.modal h2 {
+  font-size: 18px;
+}
+.modal-body {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.modal p {
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 7px 0;
+}
+.modal .field {
+  margin: 8px 0;
+  gap: 4px;
+  font-size: 12px;
+}
+.modal .field input,
+.modal .field select {
+  padding: 8px;
+  min-height: 36px;
+}
+.modal .primary,
+.modal .secondary {
+  margin-top: 8px;
+  padding: 9px;
+  min-height: 36px;
+}
+.import-modal .modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.import-modal .bulk-editor {
+  min-height: 70px !important;
+  height: clamp(70px, 20dvh, 170px);
+  resize: none;
+  padding: 8px;
+}
+.import-modal .bulk-help {
+  margin: 0;
+}
+.import-modal .inline-role-confirm {
+  padding: 7px;
+  gap: 5px;
+}
+.import-modal .role-options {
+  margin: 0;
+  gap: 5px;
+}
+.import-modal .role-options button {
+  padding: 6px 9px;
+  font-size: 12px;
+}
+.import-modal .manual-lines.compact {
+  max-height: 90px;
+  margin: 0;
+}
+.import-modal .manual-actions {
+  margin: 0;
+  gap: 4px;
+}
+.import-modal .manual-actions button {
+  padding: 5px;
+}
+.import-tools {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.import-tools button {
+  flex: 1;
+  padding: 7px 3px;
+  font-size: 12px;
+  background: #edf5ef;
+  border-radius: 5px;
+  color: #326249;
+}
+.import-modal .import-status {
+  background: #fff6de;
+  padding: 6px 8px;
+  border-radius: 4px;
+  margin: 0;
+}
+.import-modal .primary {
+  position: sticky;
+  bottom: 0;
+  flex: none;
+}
+.chat-insights button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.chat-insights button > span,
+.chat-insights button > strong,
+.chat-insights button > small {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  line-height: 22px;
+  padding: 0;
+  transform: none;
+  animation: none;
+}
+.chat-insights .affinity-number,
+.chat-insights .reply-summary strong {
+  font-size: 13px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.chat-insights svg {
+  display: block;
+  flex-shrink: 0;
+}
+.chat-insights .action-summary strong {
+  flex: 0 1 auto;
+}
+.empty .text-button {
+  display: block;
+  margin-inline: auto;
+  text-align: center;
+}
+.chat-scroll {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 10px;
+}
+.chat-scroll > .message:first-child {
+  margin-top: auto;
+}
+.chat-scroll > .message {
+  flex: none;
+  margin-bottom: 12px;
+}
+.chat-scroll > .spark-discovery {
+  flex: none;
+  margin: 2px auto 6px;
+}
+.chat-scroll > .chat-system {
+  flex: none;
+  max-width: 95%;
+  align-self: center;
+  margin: 6px auto;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: #f9e9dc;
+  color: #875538;
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.chat-system button {
+  color: #397258;
+  text-decoration: underline;
+  margin-left: 6px;
+}
+.charm-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+.charm-pages button {
+  padding: 7px;
+  background: #f4f3ee;
+  border-radius: 5px;
+}
+@media (max-height: 520px) {
+  .import-modal .bulk-help {
+    display: none;
+  }
+  .modal {
+    padding: 10px;
+  }
+  .import-modal .bulk-editor {
+    height: 70px;
+  }
+}

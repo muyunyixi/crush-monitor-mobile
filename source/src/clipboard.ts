@@ -39,7 +39,9 @@ function decodeEntities(value: string) {
         code[1].toLowerCase() === "x"
           ? Number.parseInt(code.slice(2), 16)
           : Number.parseInt(code.slice(1), 10);
-      return Number.isFinite(n) ? String.fromCodePoint(n) : all;
+      return Number.isFinite(n) && n >= 0 && n <= 0x10ffff
+        ? String.fromCodePoint(n)
+        : all;
     }
     return named[code.toLowerCase()] ?? all;
   });
@@ -65,7 +67,7 @@ function richness(value: string) {
   const speakerLines = value
     .split("\n")
     .filter((line) => /^\s*[^：:\n]{1,24}[：:]/.test(line)).length;
-  return speakerLines * 1_000_000 + lines * 10_000 + value.length;
+  return lines * 1_000_000 + speakerLines * 10_000 + value.length;
 }
 
 export function richestClipboardText(values: string[]) {
@@ -87,8 +89,12 @@ export function chooseClipboardText(plain = "", html = "") {
 
 function itemText(item: NonNullable<ClipboardData["items"]>[number]) {
   return new Promise<string>((resolve) => {
+    const timer = setTimeout(() => resolve(""), 1200);
     try {
-      item.getAsString((value) => resolve(value));
+      item.getAsString((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      });
     } catch {
       resolve("");
     }
@@ -146,7 +152,7 @@ export function joinClipboardTexts(parts: string[]) {
   return parts.map(normalizeClipboardText).filter(Boolean).join("\n");
 }
 
-export async function readClipboardText(clipboard: ClipboardReader) {
+async function readRichClipboard(clipboard: ClipboardReader) {
   if (clipboard.read) {
     try {
       const items = await clipboard.read();
@@ -170,7 +176,29 @@ export async function readClipboardText(clipboard: ClipboardReader) {
       // Mobile WebViews often expose readText even when the richer API is blocked.
     }
   }
-  if (clipboard.readText)
-    return normalizeClipboardText(await clipboard.readText());
-  throw new Error("当前浏览器不支持读取剪贴板");
+  return "";
+}
+
+export async function readClipboardText(clipboard: ClipboardReader) {
+  if (!clipboard) throw new Error("浏览器未开放剪贴板读取");
+  const bounded = async (p: Promise<string>) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        p.catch(() => ""),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve(""), 3000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const values = await Promise.all([
+    bounded(readRichClipboard(clipboard)),
+    bounded(Promise.resolve().then(() => clipboard.readText?.() ?? "")),
+  ]);
+  const text = richestClipboardText(values);
+  if (!text) throw new Error("未读取到文字，请长按粘贴或导入截图");
+  return text;
 }

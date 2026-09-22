@@ -70,3 +70,13 @@ test("粘贴事件只有一条时会再读取系统剪贴板中的完整记录",
   );
   assert.equal(text, "Crush：第一条\n我：第二条\nCrush：第三条");
 });
+
+test("read 返回一条时仍比较 readText 的完整文本", async () => {
+  const result = await readClipboardText({
+    read: async () => [
+      { types: ["text/plain"], getType: async () => new Blob(["第一条"]) },
+    ],
+    readText: async () => "第一条\n第二条\n第三条",
+  });
+  assert.equal(result, "第一条\n第二条\n第三条");
+});

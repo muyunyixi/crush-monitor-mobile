@@ -54,7 +54,7 @@ export function conversationCharms(messages: Message[]) {
       key: "moon",
       icon: "🌙",
       label: "月下信号",
-      detail: "聊天里捕捉到月亮或星光意象，界面偷偷进入夜航频道。",
+      detail: "聊天里捕捉到月亮或星光意象，解锁了一枚夜航徽章。",
     });
   if (
     has(messages, "self", /哈{2,}|h{2,}/i) &&
@@ -100,5 +100,66 @@ export function conversationCharms(messages: Message[]) {
       detail:
         "记录里出现了深夜时刻；夜深时的语气容易被放大，判断时值得多留一点余量。",
     });
-  return charms.slice(0, 4);
+  const pairs: Array<[string, string, string, RegExp, string]> = [
+    [
+      "food",
+      "🍜",
+      "饭搭子频道",
+      /吃|饭|奶茶|火锅|面条/,
+      "双方都聊到了吃喝，记录里有共同的话题入口。",
+    ],
+    [
+      "music",
+      "🎵",
+      "共享歌单",
+      /歌|音乐|旋律|耳机/,
+      "音乐在双方的话里出现了。记下歌名，下次就有一个具体话题。",
+    ],
+    [
+      "cat",
+      "🐾",
+      "毛茸茸频道",
+      /猫|狗|喵|汪|宠物/,
+      "双方都提到了小动物，这是一枚毛茸茸的话题徽章。",
+    ],
+    [
+      "plan",
+      "🗓️",
+      "未来便签",
+      /下次|明天|周末|改天/,
+      "双方都提到了未来时间；有具体安排才算约定，先记成便签。",
+    ],
+    [
+      "thanks",
+      "🌿",
+      "善意回声",
+      /谢谢|辛苦|感谢/,
+      "双方都表达了感谢或体谅，值得留意这些小小的善意。",
+    ],
+    [
+      "book",
+      "📚",
+      "书页之间",
+      /书|读|诗|小说/,
+      "双方的话里都出现了阅读相关词语，留下一枚书签。",
+    ],
+    [
+      "game",
+      "🎮",
+      "双人副本",
+      /游戏|开黑|副本|组队/,
+      "双方都提到了游戏话题，日常兴趣正在交汇。",
+    ],
+    [
+      "weather",
+      "☁️",
+      "同一片天气",
+      /雨|晴|天气|风|雪/,
+      "双方都在谈天气，平常的小话题也可以接住。",
+    ],
+  ];
+  for (const [key, icon, label, pattern, detail] of pairs)
+    if (has(messages, "self", pattern) && has(messages, "other", pattern))
+      add({ key, icon, label, detail });
+  return charms;
 }

@@ -47,6 +47,7 @@ import {
   readClipboardPaste,
   readClipboardText,
 } from "./clipboard";
+import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
@@ -63,6 +64,20 @@ function Modal({
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const old = document.activeElement as HTMLElement;
+    const viewport = window.visualViewport;
+    const resize = () => {
+      document.documentElement.style.setProperty(
+        "--dialog-vh",
+        `${viewport?.height ?? window.innerHeight}px`,
+      );
+      document.documentElement.style.setProperty(
+        "--dialog-top",
+        `${viewport?.offsetTop ?? 0}px`,
+      );
+    };
+    resize();
+    viewport?.addEventListener("resize", resize);
+    viewport?.addEventListener("scroll", resize);
     ref.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
@@ -84,6 +99,8 @@ function Modal({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      viewport?.removeEventListener("resize", resize);
+      viewport?.removeEventListener("scroll", resize);
       old?.focus();
     };
   }, []);
@@ -98,7 +115,7 @@ function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="modal"
+        className={`modal ${title === "粘贴整段聊天" ? "import-modal" : ""}`}
       >
         <header>
           <h2>{title}</h2>
@@ -106,7 +123,7 @@ function Modal({
             <X size={20} />
           </button>
         </header>
-        {children}
+        <div className="modal-body">{children}</div>
       </div>
     </div>
   );
@@ -120,6 +137,12 @@ export default function App() {
   const [manualSenders, setManualSenders] = useState<Array<"self" | "other">>(
     [],
   );
+  const [importStatus, setImportStatus] = useState("");
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [charmPage, setCharmPage] = useState(0);
+  const pasteRevision = useRef(0);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const textInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   function acceptPastedText(text: string) {
     const normalized = normalizeClipboardText(text);
@@ -143,11 +166,9 @@ export default function App() {
     if (!immediate) return;
     event.preventDefault();
     acceptPastedText(immediate);
-    void readClipboardPaste(event.clipboardData, navigator.clipboard).then(
-      (complete) => {
-        if (complete) acceptPastedText(complete);
-      },
-    );
+    void readClipboardPaste(event.clipboardData).then((complete) => {
+      if (complete) acceptPastedText(complete);
+    });
   }
   function submitInput() {
     if (!messages.length && !relationConfirmed) {
@@ -178,10 +199,8 @@ export default function App() {
     [other, setOther] = useState("Crush"),
     [relation, setRelation] = useState<Relation>("crush"),
     [relationConfirmed, setRelationConfirmed] = useState(false);
-  const [raw, setRaw] = useState(""),
-    [parsed, setParsed] = useState<Parsed[]>([]),
+  const [parsed, setParsed] = useState<Parsed[]>([]),
     [role, setRole] = useState(""),
-    [importing, setImporting] = useState(false),
     [settings, setSettings] = useState(false),
     [bulkEditing, setBulkEditing] = useState(false),
     [bulkText, setBulkText] = useState(""),
@@ -235,11 +254,11 @@ export default function App() {
     void a.refreshQuota({ endpoint, key: apiKey });
   }, [endpoint, apiKey]);
   useEffect(() => {
-    if (stay.current) {
+    if (stay.current || a.error) {
       const scroller = bottom.current?.parentElement;
       scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
     }
-  }, [messages.length]);
+  }, [messages.length, a.error, a.status]);
   const busy = a.status === "loading",
     ov = a.overview,
     value = ov?.affinity.value,
@@ -309,23 +328,6 @@ export default function App() {
     }
     openBulkEditor(text);
   }
-  function confirmImport() {
-    const names = [...new Set(parsed.map((x) => x.speaker))];
-    setSelf(role);
-    setOther(names.find((n) => n !== role) || "Crush");
-    setImporting(false);
-    add(toMessages(parsed, role));
-  }
-  function confirmManualImport() {
-    const converted = parsed.map((message, index) => ({
-      ...message,
-      speaker: manualSenders[index] === "self" ? "我" : "对方",
-    }));
-    setSelf("我");
-    setOther("对方");
-    setImporting(false);
-    add(toMessages(converted, "我"));
-  }
   function clear() {
     a.reset();
     setMessages([]);
@@ -367,6 +369,7 @@ export default function App() {
   function updateBulkText(value: string) {
     const next = parseChat(value).messages;
     const nextNames = [...new Set(next.map((message) => message.speaker))];
+    pasteRevision.current++;
     setBulkText(value);
     setParsed(next);
     setManualSenders(
@@ -379,17 +382,56 @@ export default function App() {
   function openBulkEditor(value = input) {
     updateBulkText(value);
     setBulkRelation(relationConfirmed ? relation : "");
+    setImportStatus("");
     setBulkEditing(true);
   }
   async function readAllIntoBulk() {
+    const revision = pasteRevision.current;
     try {
       const text = await readClipboardText(navigator.clipboard);
+      if (revision !== pasteRevision.current) return;
       updateBulkText(text);
-      const count = parseChat(text).messages.length;
-      setNotice(`已从系统剪贴板读取 ${count || 1} 条内容。`);
+      setImportStatus(
+        parseChat(text).messages.length <= 1
+          ? "浏览器目前只读到一条。请改用截图识字或 TXT 导入；重复读取不能恢复未开放的内容。"
+          : "已读取，请核对消息数量和发送方。",
+      );
     } catch {
-      setNotice("浏览器未允许直接读取，请在弹窗输入框内长按粘贴。");
+      setImportStatus("无法直接读取，请长按粘贴，或用截图识字 / TXT 导入。");
     }
+  }
+  async function importImages(files: FileList | null) {
+    if (!files?.length || ocrBusy) return;
+    setOcrBusy(true);
+    const revision = pasteRevision.current;
+    try {
+      const text = await recognizeScreenshots(
+        Array.from(files),
+        setImportStatus,
+      );
+      if (revision === pasteRevision.current) {
+        updateBulkText([bulkText, text].filter(Boolean).join("\n"));
+        setImportStatus(
+          "识别完成。请删除顶部昵称、时间和重复内容，并核对发送方与换行。",
+        );
+      } else
+        setImportStatus("识别期间文本已修改，未覆盖当前内容。请重新选择截图。");
+    } catch (e) {
+      setImportStatus(`识别失败：${(e as Error).message}`);
+    } finally {
+      setOcrBusy(false);
+      if (imageInput.current) imageInput.current.value = "";
+    }
+  }
+  async function importText(file?: File) {
+    if (!file) return;
+    if (file.size > 400000) {
+      setImportStatus("文本文件请小于 400 KB。");
+      return;
+    }
+    updateBulkText(normalizeClipboardText(await file.text()));
+    setImportStatus("已完整读取文本文件，请核对后分析。");
+    if (textInput.current) textInput.current.value = "";
   }
   function confirmBulkEditor() {
     if (!bulkText.trim() || !bulkRelation) return;
@@ -487,7 +529,7 @@ export default function App() {
                   className="text-button"
                   onClick={() => openBulkEditor(exampleText(0))}
                 >
-                  用一段示例试试 <ArrowUpRight size={16} />
+                  用一段示例试试
                 </button>
               </div>
             ) : (
@@ -603,10 +645,19 @@ export default function App() {
             {charms.length > 0 && (
               <button
                 className="spark-discovery"
-                onClick={() => setDetail("sparks")}
+                onClick={() => {
+                  setCharmPage(0);
+                  setDetail("sparks");
+                }}
               >
                 <Sparkles size={14} /> 发现 {charms.length} 个对话彩蛋
               </button>
+            )}
+            {a.error && (
+              <div className="chat-system" role="alert">
+                {a.error}
+                <button onClick={openSettings}>聊天设置</button>
+              </div>
             )}
             <div ref={bottom} />
           </div>
@@ -706,7 +757,7 @@ export default function App() {
                 }
                 value={input}
                 readOnly={!single}
-                onFocus={() => {
+                onClick={() => {
                   if (!single) {
                     inputRef.current?.blur();
                     openBulkEditor();
@@ -780,7 +831,6 @@ export default function App() {
                   </>
                 ) : null}
               </div>
-              {a.error && <span className="error">{a.error}</span>}
             </div>
           </div>
         </section>
@@ -788,7 +838,7 @@ export default function App() {
       {bulkEditing && (
         <Modal title="粘贴整段聊天" close={() => setBulkEditing(false)}>
           <p className="bulk-help">
-            在这里一次完成粘贴、修改、关系选择和身份确认。每条消息尽量单独一行，例如“我：内容”。
+            微信多条复制不完整时，直接选择截图识字。识别在本机完成，不上传图片。
           </p>
           <label className="field required-field">
             当前关系状态（必选）
@@ -796,7 +846,9 @@ export default function App() {
               value={bulkRelation}
               onChange={(e) => setBulkRelation(e.target.value as Relation)}
             >
-              <option value="">请选择当前关系</option>
+              <option value="" disabled hidden>
+                请选择当前关系
+              </option>
               {Object.entries(RELATIONS).map(([key, label]) => (
                 <option key={key} value={key}>
                   {label}
@@ -808,27 +860,73 @@ export default function App() {
             聊天记录
             <textarea
               className="bulk-editor"
-              autoFocus
               value={bulkText}
               placeholder={"Crush：第一条消息\n我：第二条消息"}
               onChange={(e) => updateBulkText(e.target.value)}
               onPaste={(e) => {
+                // Preserve native selection insertion; never replace the entire draft.
                 const immediate = readClipboardData(e.clipboardData);
-                if (!immediate) return;
+                const before = bulkText;
+                const begin = e.currentTarget.selectionStart;
+                const end = e.currentTarget.selectionEnd;
+                const reading = readClipboardPaste(e.clipboardData);
                 e.preventDefault();
-                updateBulkText(immediate);
-                void readClipboardPaste(
-                  e.clipboardData,
-                  navigator.clipboard,
-                ).then((complete) => {
-                  if (complete) updateBulkText(complete);
+                updateBulkText(
+                  before.slice(0, begin) + immediate + before.slice(end),
+                );
+                const revision = pasteRevision.current;
+                void reading.then((complete) => {
+                  if (revision !== pasteRevision.current) return;
+                  if (complete)
+                    updateBulkText(
+                      before.slice(0, begin) + complete + before.slice(end),
+                    );
+                  setImportStatus(
+                    parseChat(complete || immediate).messages.length <= 1
+                      ? "仅收到一条内容。如复制了多条，请用截图识字 / TXT 导入。"
+                      : "已粘贴，请核对条数。",
+                  );
                 });
               }}
             />
           </label>
-          <button className="clipboard-retry" onClick={readAllIntoBulk}>
-            <Plus size={15} /> 从系统剪贴板重新读取全部内容
-          </button>
+          <div className="import-tools">
+            <button
+              disabled={ocrBusy}
+              onClick={() => imageInput.current?.click()}
+            >
+              截图识字
+            </button>
+            <button
+              disabled={ocrBusy}
+              onClick={() => textInput.current?.click()}
+            >
+              导入 TXT
+            </button>
+            <button disabled={ocrBusy} onClick={readAllIntoBulk}>
+              读取剪贴板
+            </button>
+            <input
+              hidden
+              ref={imageInput}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              onChange={(e) => void importImages(e.target.files)}
+            />
+            <input
+              hidden
+              ref={textInput}
+              type="file"
+              accept=".txt,text/plain"
+              onChange={(e) => void importText(e.target.files?.[0])}
+            />
+          </div>
+          {importStatus && (
+            <p className="import-status" role="status">
+              {importStatus}
+            </p>
+          )}
           {!single && parsed.length > 0 && (
             <div className="inline-role-confirm">
               <strong>已识别 {parsed.length} 条，确认聊天中的“我”</strong>
@@ -927,6 +1025,7 @@ export default function App() {
           <button
             className="primary"
             disabled={
+              ocrBusy ||
               !bulkText.trim() ||
               !bulkRelation ||
               (!single &&
@@ -941,131 +1040,6 @@ export default function App() {
           >
             开始分析
           </button>
-        </Modal>
-      )}
-      {importing && (
-        <Modal title="确认聊天里的你" close={() => setImporting(false)}>
-          {names.length === 1 && names[0] === "未分配" ? (
-            <>
-              <p className="manual-help">
-                微信没有提供昵称时，请逐条确认发送方。默认按“对方、我”交替排列，可点标签修改。
-              </p>
-              <div className="manual-actions">
-                <button
-                  onClick={() =>
-                    setManualSenders(
-                      parsed.map((_, index) =>
-                        index % 2 === 0 ? "other" : "self",
-                      ),
-                    )
-                  }
-                >
-                  首条是对方
-                </button>
-                <button
-                  onClick={() =>
-                    setManualSenders(
-                      parsed.map((_, index) =>
-                        index % 2 === 0 ? "self" : "other",
-                      ),
-                    )
-                  }
-                >
-                  首条是我
-                </button>
-              </div>
-              <div className="manual-lines" aria-label="逐条确认发送方">
-                {parsed.map((message, index) => (
-                  <div className="manual-line" key={`${index}-${message.text}`}>
-                    <button
-                      className={
-                        manualSenders[index] === "self" ? "self" : "other"
-                      }
-                      onClick={() =>
-                        setManualSenders((old) =>
-                          old.map((sender, i) =>
-                            i === index
-                              ? sender === "self"
-                                ? "other"
-                                : "self"
-                              : sender,
-                          ),
-                        )
-                      }
-                    >
-                      {manualSenders[index] === "self" ? "我" : "对方"}
-                    </button>
-                    <span>{message.text}</span>
-                  </div>
-                ))}
-              </div>
-              <button
-                className="primary"
-                disabled={!parsed.length}
-                onClick={confirmManualImport}
-              >
-                按以上顺序分析
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="role-options">
-                {names
-                  .filter((n) => n !== "未分配")
-                  .map((n) => (
-                    <button
-                      className={role === n ? "selected" : ""}
-                      key={n}
-                      onClick={() => setRole(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                {names.length === 1 && (
-                  <button
-                    className={role === "__self_absent__" ? "selected" : ""}
-                    onClick={() => setRole("__self_absent__")}
-                  >
-                    这些都是对方的话
-                  </button>
-                )}
-              </div>
-              <label className="field">
-                识别到 {parsed.length} 条聊天
-                <textarea
-                  value={raw}
-                  onChange={(e) => {
-                    setRaw(e.target.value);
-                    const next = parseChat(e.target.value).messages;
-                    setParsed(next);
-                    setManualSenders(
-                      next.map((_, index) =>
-                        index % 2 === 0 ? "other" : "self",
-                      ),
-                    );
-                  }}
-                />
-              </label>
-              {(names.length > 2 || names.includes("未分配")) && (
-                <p className="error">
-                  单条复制的纯文字请关闭此窗口，选择「单条消息」。整段导入请保留两个人的聊天，可改成「我：内容」「对方：内容」。
-                </p>
-              )}
-              <button
-                className="primary"
-                disabled={
-                  !role ||
-                  !parsed.length ||
-                  names.length > 2 ||
-                  names.includes("未分配") ||
-                  (!names.includes(role) && role !== "__self_absent__")
-                }
-                onClick={confirmImport}
-              >
-                开始分析
-              </button>
-            </>
-          )}
         </Modal>
       )}
       {settings && (
@@ -1178,8 +1152,25 @@ export default function App() {
           {detail === "sparks" ? (
             <>
               <p>这些是完全在浏览器本地发现的小细节，不会额外消耗分析次数。</p>
+              <div className="charm-pages">
+                <button
+                  disabled={charmPage === 0}
+                  onClick={() => setCharmPage((p) => p - 1)}
+                >
+                  上一页
+                </button>
+                <span>
+                  {charmPage + 1} / {Math.max(1, Math.ceil(charms.length / 2))}
+                </span>
+                <button
+                  disabled={(charmPage + 1) * 2 >= charms.length}
+                  onClick={() => setCharmPage((p) => p + 1)}
+                >
+                  下一页
+                </button>
+              </div>
               <div className="spark-list">
-                {charms.map((charm) => (
+                {charms.slice(charmPage * 2, charmPage * 2 + 2).map((charm) => (
                   <div className="spark-item" key={charm.key}>
                     <span aria-hidden="true">{charm.icon}</span>
                     <div>
