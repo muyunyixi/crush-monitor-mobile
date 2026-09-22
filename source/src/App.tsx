@@ -42,6 +42,9 @@ import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
 import {
   normalizeClipboardText,
+  readClipboardData,
+  readClipboardPaste,
+  readClipboardText,
 } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
@@ -60,6 +63,24 @@ type SpeechRecognitionLike = {
   stop(): void;
 };
 
+/**
+ * 微信多选复制粘贴编辑器 (RichPasteEditor)
+ * 
+ * 变更记录与问题解决：
+ * 【问题根因】
+ * 微信在手机端复制多条聊天记录时，为了兼容性会将第一条消息放入系统剪贴板的纯文本（text/plain）通道，
+ * 而将包含完整全部消息的记录存放在富文本 HTML 通道（text/html）或拆分为多个 ClipData.Item。
+ * 普通 textarea 默认只接收 text/plain，导致粘贴后仅显示第一条消息。
+ * 
+ * 【修复方案】
+ * 1. 在保持原生 textarea 元素及其所有样式、属性完全不变的前提下，拦截 onPaste 事件。
+ * 2. 同步提取剪贴板中的 text/html 及 text/plain，调用 readClipboardData，如果有包含多条消息的富文本，
+ *    立即提取完整文本填入，无延迟、不卡顿。
+ * 3. 同步调用 preventDefault()，彻底阻止原生浏览器仅填入单条 text/plain。
+ * 4. 异步调用 readClipboardPaste 处理 Android 系统的多项 ClipData.Item 或系统剪贴板备选内容，
+ *    确保在任何微信多选复制场景下都能完整提取所有聊天记录。
+ * 5. 精确计算并保留光标位置与选区替换，编辑体验与普通 textarea 完全一致。
+ */
 function RichPasteEditor({
   value,
   onChange,
@@ -67,6 +88,58 @@ function RichPasteEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const handlePaste = async (
+    event: React.ClipboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const clipData = event.clipboardData;
+    if (!clipData) return;
+
+    // 1. 同步读取剪贴板中的即时数据（text/plain 与 text/html）
+    const plain =
+      clipData.getData("text/plain") || clipData.getData("text") || "";
+    const immediate = readClipboardData(clipData);
+
+    // 阻止浏览器默认只取 text/plain（即只粘贴第一条）的截断行为
+    event.preventDefault();
+
+    const textarea = event.currentTarget;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    const prevValue = textarea.value;
+
+    const applyText = (text: string) => {
+      if (!text) return;
+      const next = prevValue.slice(0, start) + text + prevValue.slice(end);
+      onChange(next);
+      requestAnimationFrame(() => {
+        try {
+          textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        } catch {}
+      });
+    };
+
+    // 优先填入立即读取到的完整内容（若 HTML 包含完整多条，即刻呈现）
+    if (immediate) {
+      applyText(immediate);
+    } else if (plain) {
+      applyText(plain);
+    }
+
+    // 2. 异步补充检查系统剪贴板与 Android ClipData items，确保获取多项合并后的完整记录
+    try {
+      const clipboardReader =
+        typeof navigator !== "undefined" && navigator.clipboard
+          ? navigator.clipboard
+          : undefined;
+      const complete = await readClipboardPaste(clipData, clipboardReader);
+      if (complete && complete !== immediate && complete !== plain) {
+        applyText(complete);
+      }
+    } catch {
+      // 降级使用已填入的 immediate 内容
+    }
+  };
+
   return (
     <textarea
       className="bulk-editor rich-paste-editor"
@@ -75,6 +148,7 @@ function RichPasteEditor({
       placeholder={"Crush：第一条消息\n我：第二条消息"}
       value={value}
       onChange={(event) => onChange(event.currentTarget.value)}
+      onPaste={handlePaste}
     />
   );
 }
@@ -486,9 +560,31 @@ export default function App() {
     setImportStatus("");
     setBulkEditing(true);
   }
-  function focusNativePaste() {
+  /**
+   * 长按粘贴或一键读取完整微信聊天记录
+   * 变更记录：
+   * 优先尝试调用 navigator.clipboard 读取完整记录，若成功则一键填入；
+   * 若浏览器限制权限，则自动聚焦输入框并提示用户长按粘贴，由上面的 handlePaste 拦截并恢复完整多条记录。
+   */
+  async function focusNativePaste() {
     const editor = document.getElementById("bulk-chat-editor");
     editor?.focus();
+    if (editor instanceof HTMLTextAreaElement) {
+      editor.select();
+    }
+    // 优先尝试读取系统剪贴板中的完整记录
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        const text = await readClipboardText(navigator.clipboard);
+        if (text) {
+          updateBulkText(text);
+          setImportStatus("已成功从剪贴板读取完整聊天记录。");
+          return;
+        }
+      } catch {
+        // 无权限时走原流程引导长按粘贴
+      }
+    }
     setImportStatus(
       "请在上方输入区长按，选择“粘贴”。这是手机浏览器能接收微信完整多条记录的可靠入口。",
     );
