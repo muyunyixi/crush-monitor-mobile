@@ -99,9 +99,6 @@ function RichPasteEditor({
       clipData.getData("text/plain") || clipData.getData("text") || "";
     const immediate = readClipboardData(clipData);
 
-    // 阻止浏览器默认只取 text/plain（即只粘贴第一条）的截断行为
-    event.preventDefault();
-
     const textarea = event.currentTarget;
     const start = textarea.selectionStart ?? 0;
     const end = textarea.selectionEnd ?? textarea.value.length;
@@ -118,11 +115,13 @@ function RichPasteEditor({
       });
     };
 
-    // 优先填入立即读取到的完整内容（若 HTML 包含完整多条，即刻呈现）
-    if (immediate) {
+    // 仅当提取到比普通文本更长、更丰富的多条富文本内容时才主动替换，避免破坏正常浏览器/输入法键盘粘贴
+    if (immediate && immediate.length > plain.length) {
+      event.preventDefault();
       applyText(immediate);
-    } else if (plain) {
-      applyText(plain);
+    } else {
+      if (immediate) applyText(immediate);
+      else if (plain) applyText(plain);
     }
 
     // 2. 异步补充检查系统剪贴板与 Android ClipData items，确保获取多项合并后的完整记录
@@ -553,6 +552,11 @@ export default function App() {
     setRole(
       nextNames.includes(self) ? self : nextNames.includes("我") ? "我" : "",
     );
+    if (value.trim() && next.length <= 1) {
+      setImportStatus(
+        "提示：若微信多选复制后此处仅显示 1 条，因安卓手机浏览器内核限制所致。请点手机键盘顶部的【剪贴板】图标粘贴，或通过备忘录中转 / 点击【截图识字】。",
+      );
+    }
   }
   function openBulkEditor(value = input) {
     updateBulkText(value);
@@ -586,7 +590,7 @@ export default function App() {
       }
     }
     setImportStatus(
-      "请在上方输入区长按，选择“粘贴”。这是手机浏览器能接收微信完整多条记录的可靠入口。",
+      "提示：手机浏览器长按直接粘贴通常只接收第 1 条。如需输入微信多条记录，建议点击手机键盘顶部的【剪贴板】图标粘贴，或点击左侧【截图识字】。",
     );
   }
   async function importImages(files: FileList | null) {
