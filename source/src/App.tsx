@@ -145,6 +145,7 @@ function RichPasteEditor({
       suppressContentEditableWarning
       role="textbox"
       aria-label="聊天记录"
+      id="bulk-chat-editor"
       aria-multiline="true"
       data-placeholder="Crush：第一条消息\A我：第二条消息"
       onPaste={(event) => {
@@ -605,12 +606,19 @@ export default function App() {
       updateBulkText(text);
       setImportStatus(
         parseChat(text).messages.length <= 1
-          ? "浏览器目前只读到一条。请改用截图识字或 TXT 导入；重复读取不能恢复未开放的内容。"
+          ? "系统读取接口只开放了一条。请点“长按粘贴完整记录”，再在输入区长按选择“粘贴”；原生粘贴可以读取微信全部记录。"
           : "已读取，请核对消息数量和发送方。",
       );
     } catch {
       setImportStatus("无法直接读取，请长按粘贴，或用截图识字 / TXT 导入。");
     }
+  }
+  function focusNativePaste() {
+    const editor = document.getElementById("bulk-chat-editor");
+    editor?.focus();
+    setImportStatus(
+      "请在上方输入区长按，选择“粘贴”。这是手机浏览器能接收微信完整多条记录的可靠入口。",
+    );
   }
   async function importImages(files: FileList | null) {
     if (!files?.length || ocrBusy) return;
@@ -1083,7 +1091,10 @@ export default function App() {
               导入 TXT
             </button>
             <button disabled={ocrBusy} onClick={readAllIntoBulk}>
-              读取剪贴板
+              尝试直接读取
+            </button>
+            <button disabled={ocrBusy} onClick={focusNativePaste}>
+              长按粘贴完整记录
             </button>
             <input
               hidden

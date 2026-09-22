@@ -12,6 +12,10 @@ function cleanText(value: string) {
     .replace(/\s*\n\s*/g, " ")
     .replace(/([\u3400-\u9fff]) +(?=[\u3400-\u9fff])/g, "$1")
     .replace(/[|¦]{2,}/g, " ")
+    // WeChat screenshots often leave avatar/icon fragments immediately after
+    // the bubble text (for example `一 Un`, `一 as` or `| )`).  They are not
+    // part of the message, even when Tesseract assigns them a fair confidence.
+    .replace(/\s*(?:[一|¦]\s*)+(?:[A-Za-z]{1,12}|[()（）]+)(?:\s*[|¦()（）]*)?$/u, "")
     .replace(/\s{2,}/g, " ")
     .replace(/^[^\p{L}\p{N}\u3400-\u9fff]+/u, "")
     .replace(/[^\p{L}\p{N}\u3400-\u9fff！？!?。，,.~～…：:；;）)】\]」』]+$/u, "")
