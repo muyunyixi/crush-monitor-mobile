@@ -1,5 +1,5 @@
 export type ClipboardReader = {
-  read?: () => Promise<
+  read?: (options?: { unsanitized?: string[] }) => Promise<
     Array<{ types: readonly string[]; getType(type: string): Promise<Blob> }>
   >;
   readText?: () => Promise<string>;
@@ -155,7 +155,12 @@ export function joinClipboardTexts(parts: string[]) {
 async function readRichClipboard(clipboard: ClipboardReader) {
   if (clipboard.read) {
     try {
-      const items = await clipboard.read();
+      let items;
+      try {
+        items = await clipboard.read({ unsanitized: ["text/html"] });
+      } catch {
+        items = await clipboard.read();
+      }
       const parts: string[] = [];
       for (const item of items) {
         let plain = "";

@@ -42,12 +42,25 @@ import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
 import {
   normalizeClipboardText,
+  readClipboardData,
   readClipboardText,
 } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
+const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
 
 function moveCaretToEnd(element: HTMLElement) {
   const selection = window.getSelection();
@@ -59,6 +72,23 @@ function moveCaretToEnd(element: HTMLElement) {
   selection.addRange(range);
 }
 
+function insertTextAtCaret(element: HTMLElement, text: string) {
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  if (!range || !element.contains(range.commonAncestorContainer)) {
+    element.append(document.createTextNode(text));
+    moveCaretToEnd(element);
+    return;
+  }
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.collapse(true);
+  selection!.removeAllRanges();
+  selection!.addRange(range);
+}
+
 function RichPasteEditor({
   value,
   onChange,
@@ -68,11 +98,44 @@ function RichPasteEditor({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const receivingRichPaste = useRef(false);
+  const pasteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function editorText(editor: HTMLElement) {
+    return editor.innerText
+      .replace(/\r\n?|\u2028|\u2029/g, "\n")
+      .replace(/\u00a0/g, " ");
+  }
+
+  function finishPaste(editor: HTMLDivElement) {
+    if (pasteTimer.current) clearTimeout(pasteTimer.current);
+    pasteTimer.current = setTimeout(() => {
+      const text = editorText(editor);
+      receivingRichPaste.current = false;
+      // Strip styles, images and links only after every clipboard fragment has
+      // landed. Updating React state earlier can interrupt Android multi-item
+      // paste after its first fragment.
+      editor.textContent = text;
+      moveCaretToEnd(editor);
+      onChange(text);
+    }, 120);
+  }
 
   useEffect(() => {
     const editor = ref.current;
-    if (editor && editor.innerText !== value) editor.textContent = value;
+    if (
+      editor &&
+      !receivingRichPaste.current &&
+      editor.innerText !== value
+    )
+      editor.textContent = value;
   }, [value]);
+
+  useEffect(
+    () => () => {
+      if (pasteTimer.current) clearTimeout(pasteTimer.current);
+    },
+    [],
+  );
 
   return (
     <div
@@ -84,27 +147,27 @@ function RichPasteEditor({
       aria-label="聊天记录"
       aria-multiline="true"
       data-placeholder="Crush：第一条消息\A我：第二条消息"
-      onPaste={() => {
-        // Do not prevent the native paste. WeChat puts the full selection in
-        // its rich clipboard representation on some phones, while text/plain
-        // contains only the first message. A contenteditable surface lets the
-        // browser insert that complete representation first.
+      onPaste={(event) => {
+        const plain = normalizeClipboardText(
+          event.clipboardData.getData("text/plain"),
+        );
+        const complete = readClipboardData(event.clipboardData);
         receivingRichPaste.current = true;
+        if (complete && complete !== plain && complete.length > plain.length) {
+          // Some WeChat versions expose only the first selected message as
+          // text/plain but keep the complete selection in text/html.
+          event.preventDefault();
+          insertTextAtCaret(event.currentTarget, complete);
+          finishPaste(event.currentTarget);
+        }
       }}
       onInput={(event) => {
         const editor = event.currentTarget;
-        const text = editor.innerText
-          .replace(/\r\n?|\u2028|\u2029/g, "\n")
-          .replace(/\u00a0/g, " ");
         if (receivingRichPaste.current) {
-          receivingRichPaste.current = false;
-          // Remove pasted markup immediately after the browser has converted
-          // it to visible text. This prevents styles, images and links from
-          // remaining in the editor while keeping every pasted message.
-          editor.textContent = text;
-          moveCaretToEnd(editor);
+          finishPaste(editor);
+          return;
         }
-        onChange(text);
+        onChange(editorText(editor));
       }}
     />
   );
@@ -132,6 +195,10 @@ function Modal({
         "--dialog-top",
         `${viewport?.offsetTop ?? 0}px`,
       );
+      document.documentElement.dataset.dialogKeyboard =
+        viewport && viewport.height < window.innerHeight * 0.72
+          ? "open"
+          : "closed";
     };
     resize();
     viewport?.addEventListener("resize", resize);
@@ -159,6 +226,7 @@ function Modal({
       document.removeEventListener("keydown", onKey);
       viewport?.removeEventListener("resize", resize);
       viewport?.removeEventListener("scroll", resize);
+      delete document.documentElement.dataset.dialogKeyboard;
       old?.focus();
     };
   }, []);
@@ -173,7 +241,7 @@ function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`modal ${title === "粘贴整段聊天" ? "import-modal" : ""}`}
+        className={`modal ${title === "粘贴整段聊天" ? "import-modal" : ""} ${title === "情绪与意图" ? "analysis-modal" : ""}`}
       >
         <header>
           <h2>{title}</h2>
@@ -198,7 +266,9 @@ export default function App() {
   const [importStatus, setImportStatus] = useState("");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [charmPage, setCharmPage] = useState(0);
+  const [dictating, setDictating] = useState(false);
   const pasteRevision = useRef(0);
+  const speechRef = useRef<SpeechRecognitionLike | null>(null);
   const imageInput = useRef<HTMLInputElement>(null);
   const textInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -222,7 +292,6 @@ export default function App() {
   function submitInput() {
     if (!messages.length && !relationConfirmed) {
       openBulkEditor(input);
-      setBulkRelation("");
       return;
     }
     if (single) {
@@ -253,7 +322,7 @@ export default function App() {
     [settings, setSettings] = useState(false),
     [bulkEditing, setBulkEditing] = useState(false),
     [bulkText, setBulkText] = useState(""),
-    [bulkRelation, setBulkRelation] = useState<Relation | "">(""),
+    [bulkRelation, setBulkRelation] = useState<Relation | "">("crush"),
     [draftKey, setDraftKey] = useState(apiKey),
     [draftEndpoint, setDraftEndpoint] = useState(endpoint),
     [draftRelation, setDraftRelation] = useState<Relation>(relation),
@@ -308,6 +377,83 @@ export default function App() {
       scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
     }
   }, [messages.length, a.error, a.status]);
+  useEffect(
+    () => () => {
+      speechRef.current?.stop();
+    },
+    [],
+  );
+
+  function toggleDictation() {
+    if (dictating) {
+      speechRef.current?.stop();
+      return;
+    }
+    const speechWindow = window as unknown as {
+      SpeechRecognition?: new () => SpeechRecognitionLike;
+      webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+    };
+    const Recognition =
+      speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!Recognition) {
+      setNotice("当前浏览器不支持语音转文字，可以使用系统键盘的语音输入。");
+      return;
+    }
+    const recognition = new Recognition();
+    recognition.lang = "zh-CN";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript || "")
+        .join("")
+        .trim();
+      if (transcript)
+        setInput((old) => `${old}${old && !old.endsWith(" ") ? " " : ""}${transcript}`);
+    };
+    recognition.onerror = () => {
+      setNotice("没有听清，点麦克风可以再试一次。");
+    };
+    recognition.onend = () => {
+      speechRef.current = null;
+      setDictating(false);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    };
+    speechRef.current = recognition;
+    setSingle(true);
+    setDictating(true);
+    setNotice("正在听，识别结果会放进输入框。再点一次可停止。");
+    try {
+      recognition.start();
+    } catch {
+      setDictating(false);
+      setNotice("语音输入启动失败，请检查浏览器麦克风权限。");
+    }
+  }
+
+  function addTone(value: string) {
+    setSingle(true);
+    setInput((old) => `${old}${old ? " " : ""}${value}`);
+    setDetail(null);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  async function copyConversation() {
+    if (!messages.length) return;
+    const text = messages
+      .map((message) =>
+        `${message.sender === "self" ? self || "我" : other || "对方"}：${message.text}`,
+      )
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice(`已复制整理后的 ${messages.length} 条记录。`);
+    } catch {
+      setNotice("复制失败，请在整段记录窗口中手动选择文字。");
+    }
+    setDetail(null);
+  }
+
   const busy = a.status === "loading",
     ov = a.overview,
     value = ov?.affinity.value,
@@ -315,6 +461,23 @@ export default function App() {
   const imperialMode =
     messages.filter((m) => /朕|大皇帝|灵气复苏/.test(m.text)).length >= 2;
   const charms = conversationCharms(messages);
+  const selfCount = messages.filter((message) => message.sender === "self").length;
+  const otherCount = messages.length - selfCount;
+  const turns = messages.reduce(
+    (count, message, index) =>
+      index > 0 && message.sender !== messages[index - 1].sender
+        ? count + 1
+        : count,
+    0,
+  );
+  const rhythm =
+    !messages.length
+      ? "等待聊天"
+      : Math.abs(selfCount - otherCount) <= Math.max(1, messages.length * 0.2)
+        ? "你来我往"
+        : selfCount > otherCount
+          ? "我方更主动"
+          : "对方更主动";
   let selfStreak = 0;
   for (
     let i = messages.length - 1;
@@ -430,7 +593,7 @@ export default function App() {
   }
   function openBulkEditor(value = input) {
     updateBulkText(value);
-    setBulkRelation(relationConfirmed ? relation : "");
+    setBulkRelation(relationConfirmed ? relation : "crush");
     setImportStatus("");
     setBulkEditing(true);
   }
@@ -786,11 +949,9 @@ export default function App() {
             </div>
             <div className="wechat-composer-line">
               <button
-                className="compose-round"
-                aria-label="语音输入提示"
-                onClick={() =>
-                  setNotice("请先在微信中复制文字，再回到这里粘贴。")
-                }
+                className={`compose-round ${dictating ? "active" : ""}`}
+                aria-label={dictating ? "停止语音转文字" : "语音转文字"}
+                onClick={toggleDictation}
               >
                 <Mic size={25} />
               </button>
@@ -820,15 +981,15 @@ export default function App() {
               />
               <button
                 className="compose-round"
-                aria-label="粘贴聊天"
-                onClick={() => (single ? pasteFromPhone() : openBulkEditor())}
+                aria-label="打开语气工具箱"
+                onClick={() => setDetail("tones")}
               >
                 <Smile size={26} />
               </button>
               <button
                 className="compose-plus"
-                aria-label="粘贴聊天"
-                onClick={() => (single ? pasteFromPhone() : openBulkEditor())}
+                aria-label="打开聊天工具箱"
+                onClick={() => setDetail("tools")}
               >
                 <Plus size={24} />
               </button>
@@ -888,15 +1049,12 @@ export default function App() {
           <p className="bulk-help">
             直接长按粘贴会使用浏览器原生粘贴。截图识字会裁掉状态栏和输入栏，并按左右气泡区分双方。
           </p>
-          <label className="field required-field">
+          <label className="field required-field import-relation">
             当前关系状态（必选）
             <select
               value={bulkRelation}
               onChange={(e) => setBulkRelation(e.target.value as Relation)}
             >
-              <option value="" disabled hidden>
-                请选择当前关系
-              </option>
               {Object.entries(RELATIONS).map(([key, label]) => (
                 <option key={key} value={key}>
                   {label}
@@ -1158,6 +1316,10 @@ export default function App() {
           title={
             detail === "overview"
               ? "好感度"
+              : detail === "tones"
+                ? "语气工具箱"
+                : detail === "tools"
+                  ? "聊天工具箱"
               : detail === "sparks"
                 ? "对话彩蛋"
                 : detail === "action"
@@ -1170,7 +1332,75 @@ export default function App() {
           }
           close={() => setDetail(null)}
         >
-          {detail === "sparks" ? (
+          {detail === "tones" ? (
+            <>
+              <p className="tool-intro">点一下加入输入框，仍可继续修改。</p>
+              <div className="tone-grid">
+                {TONE_CHIPS.map((tone) => (
+                  <button key={tone} onClick={() => addTone(tone)}>
+                    {tone}
+                  </button>
+                ))}
+              </div>
+              <div className="micro-tip">
+                <Sparkles size={15} /> 同一句话加不同语气会产生不同解读，发送前可以先读一遍。
+              </div>
+            </>
+          ) : detail === "tools" ? (
+            <>
+              <div className="local-stats" aria-label="本地聊天速览">
+                <div><strong>{messages.length}</strong><span>消息</span></div>
+                <div><strong>{turns}</strong><span>接话</span></div>
+                <div><strong>{selfCount}:{otherCount}</strong><span>双方条数</span></div>
+                <div><strong>{rhythm}</strong><span>当前节奏</span></div>
+              </div>
+              <div className="tool-actions">
+                <button
+                  onClick={() => {
+                    setDetail(null);
+                    openBulkEditor();
+                  }}
+                >
+                  <strong>导入整段记录</strong>
+                  <span>富文本粘贴、截图识字、TXT</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setDetail(null);
+                    openBulkEditor(exampleText(0));
+                  }}
+                >
+                  <strong>载入示例</strong>
+                  <span>不消耗次数，分析时才计次</span>
+                </button>
+                <button disabled={!messages.length} onClick={() => void copyConversation()}>
+                  <strong>复制整理记录</strong>
+                  <span>自动补上双方昵称</span>
+                </button>
+                <button
+                  disabled={!messages.length || busy}
+                  onClick={() => {
+                    setDetail(null);
+                    a.run(messages, relation);
+                  }}
+                >
+                  <strong>重新分析</strong>
+                  <span>用当前设置刷新结果</span>
+                </button>
+              </div>
+              {charms.length > 0 && (
+                <button
+                  className="tool-spark-link"
+                  onClick={() => {
+                    setCharmPage(0);
+                    setDetail("sparks");
+                  }}
+                >
+                  <Sparkles size={15} /> 查看 {charms.length} 个本地对话彩蛋
+                </button>
+              )}
+            </>
+          ) : detail === "sparks" ? (
             <>
               <p>这些是完全在浏览器本地发现的小细节，不会额外消耗分析次数。</p>
               <div className="charm-pages">
@@ -1250,54 +1480,67 @@ export default function App() {
             </>
           ) : (
             <>
-              <blockquote>{chosen?.text}</blockquote>
+              <div className="analysis-context">
+                <span>本条消息</span>
+                <blockquote>{chosen?.text}</blockquote>
+              </div>
               {chosen?.sender === "other" ? (
                 <>
-                  <h3>情绪</h3>
-                  <div className="emotion-distribution">
-                    {Object.entries(result?.emotions || {})
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([key, p]) => (
-                        <div key={key}>
-                          <span>
-                            {EMOTIONS[key as keyof typeof EMOTIONS]?.label ||
-                              key}
-                          </span>
-                          <div className="probability-track">
-                            <i style={{ width: `${p * 100}%` }} />
+                  <section className="analysis-panel emotion-panel">
+                    <header>
+                      <span>01</span>
+                      <div>
+                        <h3>情绪信号</h3>
+                        <p>更像哪几种表达状态</p>
+                      </div>
+                    </header>
+                    <div className="emotion-distribution">
+                      {Object.entries(result?.emotions || {})
+                        .filter(([, p]) => p > 0)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 3)
+                        .map(([key, p], index) => (
+                          <div key={key}>
+                            <span className="emotion-rank">{index + 1}</span>
+                            <span className="emotion-name">
+                              {EMOTIONS[key as keyof typeof EMOTIONS]?.label || key}
+                            </span>
+                            <div className="probability-track">
+                              <i style={{ width: `${p * 100}%` }} />
+                            </div>
+                            <b>{p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`}</b>
                           </div>
-                          <b>
-                            {p > 0 && p < 0.005
-                              ? "<1%"
-                              : `${Math.round(p * 100)}%`}
-                          </b>
-                        </div>
-                      ))}
-                  </div>
-                  <h3 className="intent-detail-heading">意图</h3>
-                  <div className="intent-distribution">
-                    {Object.entries(result?.intents || {})
-                      .filter(([key, p]) => key in INTENTS && p > 0)
-                      .sort((a, b) => b[1] - a[1])
-                      .map(([key, p]) => (
-                        <div key={key} className="intent-detail-item">
-                          <div>
-                            <strong>
-                              {INTENTS[key as keyof typeof INTENTS].label}
-                            </strong>
-                            <b>
-                              {p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`}
-                            </b>
+                        ))}
+                    </div>
+                  </section>
+                  <section className="analysis-panel intent-panel">
+                    <header>
+                      <span>02</span>
+                      <div>
+                        <h3>沟通意图</h3>
+                        <p>这句话可能在推动什么</p>
+                      </div>
+                    </header>
+                    <div className="intent-distribution">
+                      {Object.entries(result?.intents || {})
+                        .filter(([key, p]) => key in INTENTS && p > 0)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 3)
+                        .map(([key, p]) => (
+                          <div key={key} className="intent-detail-item">
+                            <div>
+                              <strong>{INTENTS[key as keyof typeof INTENTS].label}</strong>
+                              <b>{p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`}</b>
+                            </div>
+                            <p>{INTENTS[key as keyof typeof INTENTS].criteria}</p>
                           </div>
-                          <p>{INTENTS[key as keyof typeof INTENTS].criteria}</p>
-                        </div>
-                      ))}
-                    {!result?.intents && <p>意图尚未分析。</p>}
+                        ))}
+                      {!result?.intents && <p>意图尚未分析。</p>}
+                    </div>
+                  </section>
+                  <div className="analysis-note">
+                    概率用于排列候选解释，不等于测量对方真实想法，也不会强行凑成 100%。
                   </div>
-                  <p>
-                    两行分别展示主要情绪与主要沟通意图的候选解读，不代表测量真实内心。每行最多显示前三项，保留原始概率，不重新凑成
-                    100%。
-                  </p>
                 </>
               ) : (
                 <>
@@ -1315,7 +1558,18 @@ export default function App() {
                   </p>
                 </>
               )}
-              <p>结合当前已导入的上下文判断，不代表对方真实想法。</p>
+              {chosen && (
+                <button
+                  className="copy-message"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(chosen.text);
+                    setNotice("已复制这条消息。");
+                    setDetail(null);
+                  }}
+                >
+                  复制这条消息
+                </button>
+              )}
             </>
           )}
         </Modal>

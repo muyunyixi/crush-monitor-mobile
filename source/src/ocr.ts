@@ -8,27 +8,30 @@ function cropCanvas(
   width: number,
   height: number,
   scale = 1,
+  enhance = false,
 ) {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
-  canvas
-    .getContext("2d")!
-    .drawImage(bitmap, x, y, width, height, 0, 0, canvas.width, canvas.height);
+  const context = canvas.getContext("2d")!;
+  if (enhance) context.filter = "grayscale(1) contrast(1.32)";
+  context.drawImage(bitmap, x, y, width, height, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 
-function collectParagraphs(
+function collectLines(
   blocks: Array<{
-    paragraphs: Array<{ text: string; confidence: number; bbox: OcrLine["bbox"] }>;
+    paragraphs: Array<{
+      lines: Array<{ text: string; confidence: number; bbox: OcrLine["bbox"] }>;
+    }>;
   }> | null,
 ): OcrLine[] {
+  let group = 0;
   return (blocks ?? []).flatMap((block) =>
-    block.paragraphs.map((paragraph) => ({
-      text: paragraph.text,
-      confidence: paragraph.confidence,
-      bbox: paragraph.bbox,
-    })),
+    block.paragraphs.flatMap((paragraph) => {
+      group++;
+      return paragraph.lines.map((line) => ({ ...line, group }));
+    }),
   );
 }
 
@@ -82,6 +85,8 @@ export async function recognizeScreenshots(
           chatTop,
           bitmap.width,
           chatBottom - chatTop,
+          bitmap.width < 1200 ? 1.35 : 1,
+          true,
         );
 
         await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
@@ -95,7 +100,7 @@ export async function recognizeScreenshots(
           {},
           { text: true, blocks: true },
         );
-        const lines = collectParagraphs(result.data.blocks);
+        const lines = collectLines(result.data.blocks);
         parts.push(
           ...chatLinesFromLayout(lines, chatCanvas.width, knownTitle || "对方"),
         );
