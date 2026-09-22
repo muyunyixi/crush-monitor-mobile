@@ -161,15 +161,6 @@ export default function App() {
       setNotice("请长按输入框，选择粘贴。");
     }
   }
-  function onPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    const immediate = readClipboardData(event.clipboardData);
-    if (!immediate) return;
-    event.preventDefault();
-    acceptPastedText(immediate);
-    void readClipboardPaste(event.clipboardData).then((complete) => {
-      if (complete) acceptPastedText(complete);
-    });
-  }
   function submitInput() {
     if (!messages.length && !relationConfirmed) {
       openBulkEditor(input);
@@ -412,7 +403,7 @@ export default function App() {
       if (revision === pasteRevision.current) {
         updateBulkText([bulkText, text].filter(Boolean).join("\n"));
         setImportStatus(
-          "识别完成。请删除顶部昵称、时间和重复内容，并核对发送方与换行。",
+          "识别完成。已过滤状态栏、输入栏和居中提示，并按左右气泡标记双方；请核对文字。",
         );
       } else
         setImportStatus("识别期间文本已修改，未覆盖当前内容。请重新选择截图。");
@@ -764,7 +755,6 @@ export default function App() {
                   }
                 }}
                 onChange={(e) => setInput(e.target.value)}
-                onPaste={single ? onPaste : undefined}
                 onKeyDown={(e) => {
                   if ((e.metaKey || e.ctrlKey) && e.key === "Enter")
                     submitInput();
@@ -838,7 +828,7 @@ export default function App() {
       {bulkEditing && (
         <Modal title="粘贴整段聊天" close={() => setBulkEditing(false)}>
           <p className="bulk-help">
-            微信多条复制不完整时，直接选择截图识字。识别在本机完成，不上传图片。
+            直接长按粘贴会使用浏览器原生粘贴。截图识字会裁掉状态栏和输入栏，并按左右气泡区分双方。
           </p>
           <label className="field required-field">
             当前关系状态（必选）
@@ -863,31 +853,6 @@ export default function App() {
               value={bulkText}
               placeholder={"Crush：第一条消息\n我：第二条消息"}
               onChange={(e) => updateBulkText(e.target.value)}
-              onPaste={(e) => {
-                // Preserve native selection insertion; never replace the entire draft.
-                const immediate = readClipboardData(e.clipboardData);
-                const before = bulkText;
-                const begin = e.currentTarget.selectionStart;
-                const end = e.currentTarget.selectionEnd;
-                const reading = readClipboardPaste(e.clipboardData);
-                e.preventDefault();
-                updateBulkText(
-                  before.slice(0, begin) + immediate + before.slice(end),
-                );
-                const revision = pasteRevision.current;
-                void reading.then((complete) => {
-                  if (revision !== pasteRevision.current) return;
-                  if (complete)
-                    updateBulkText(
-                      before.slice(0, begin) + complete + before.slice(end),
-                    );
-                  setImportStatus(
-                    parseChat(complete || immediate).messages.length <= 1
-                      ? "仅收到一条内容。如复制了多条，请用截图识字 / TXT 导入。"
-                      : "已粘贴，请核对条数。",
-                  );
-                });
-              }}
             />
           </label>
           <div className="import-tools">

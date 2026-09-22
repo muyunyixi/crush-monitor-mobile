@@ -1,4 +1,36 @@
 import { createWorker, PSM } from "tesseract.js";
+import { chatLinesFromLayout, cleanChatTitle, type OcrLine } from "./ocr-layout";
+
+function cropCanvas(
+  bitmap: ImageBitmap,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  scale = 1,
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas
+    .getContext("2d")!
+    .drawImage(bitmap, x, y, width, height, 0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
+function collectParagraphs(
+  blocks: Array<{
+    paragraphs: Array<{ text: string; confidence: number; bbox: OcrLine["bbox"] }>;
+  }> | null,
+): OcrLine[] {
+  return (blocks ?? []).flatMap((block) =>
+    block.paragraphs.map((paragraph) => ({
+      text: paragraph.text,
+      confidence: paragraph.confidence,
+      bbox: paragraph.bbox,
+    })),
+  );
+}
 
 // The engine and language assets are served from this site, never a third-party CDN.
 export async function recognizeScreenshots(
@@ -23,21 +55,52 @@ export async function recognizeScreenshots(
     },
   });
   const parts: string[] = [];
+  let knownTitle = "";
   try {
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
     for (let i = 0; i < files.length; i++) {
-      progress(`识别第 ${i + 1} / ${files.length} 张截图…`);
+      progress(`分析第 ${i + 1} / ${files.length} 张截图的聊天区域…`);
       const bitmap = await createImageBitmap(files[i]);
       try {
         if (bitmap.width * bitmap.height > 24000000)
           throw new Error("截图过长，请拆成几张再导入。");
-        const canvas = document.createElement("canvas");
-        canvas.width = bitmap.width;
-        canvas.height = bitmap.height;
-        canvas.getContext("2d")!.drawImage(bitmap, 0, 0);
-        const result = await worker.recognize(canvas);
-        parts.push(result.data.text.trim());
-        canvas.width = canvas.height = 1;
+
+        // A normal WeChat screenshot uses roughly the first 10% for the status/title
+        // bars and the last 8.5% for the composer. They are intentionally excluded.
+        const titleCanvas = cropCanvas(
+          bitmap,
+          bitmap.width * 0.2,
+          bitmap.height * 0.04,
+          bitmap.width * 0.6,
+          bitmap.height * 0.06,
+          2,
+        );
+        const chatTop = Math.round(bitmap.height * 0.1);
+        const chatBottom = Math.round(bitmap.height * 0.915);
+        const chatCanvas = cropCanvas(
+          bitmap,
+          0,
+          chatTop,
+          bitmap.width,
+          chatBottom - chatTop,
+        );
+
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
+        const titleResult = await worker.recognize(titleCanvas);
+        const title = cleanChatTitle(titleResult.data.text);
+        if (title !== "对方") knownTitle = title;
+
+        await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+        const result = await worker.recognize(
+          chatCanvas,
+          {},
+          { text: true, blocks: true },
+        );
+        const lines = collectParagraphs(result.data.blocks);
+        parts.push(
+          ...chatLinesFromLayout(lines, chatCanvas.width, knownTitle || "对方"),
+        );
+        titleCanvas.width = titleCanvas.height = 1;
+        chatCanvas.width = chatCanvas.height = 1;
       } finally {
         bitmap.close();
       }
@@ -45,9 +108,7 @@ export async function recognizeScreenshots(
   } finally {
     await worker.terminate();
   }
-  if (!parts.some(Boolean))
-    throw new Error("未识别到文字，请选择清晰的文字聊天截图。");
-  return parts
-    .join("\n")
-    .replace(/([\u3400-\u9fff]) +(?=[\u3400-\u9fff])/g, "$1");
+  if (!parts.length)
+    throw new Error("未识别到左右聊天气泡，请选择完整、清晰的微信聊天截图。");
+  return parts.join("\n");
 }
