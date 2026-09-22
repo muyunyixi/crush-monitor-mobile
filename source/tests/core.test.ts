@@ -36,6 +36,16 @@ test("手动格式支持多行、连续同人、emoji与附件", () => {
   assert.equal(r[0].timestamp, null);
   assert.equal(r[2].kind, "unreadable");
 });
+test("包含微信日期头或会话标题的多条消息能完整拆分", () => {
+  const raw = `2024年3月15日 14:00\n张三：在吗？\n李四：在的\n张三：出来吃饭吗\n李四：好啊`;
+  const parsed = parseChat(raw);
+  assert.equal(parsed.messages.length, 4);
+  assert.equal(parsed.messages[0].speaker, "张三");
+  assert.equal(parsed.messages[0].text, "在吗？");
+  assert.equal(parsed.messages[3].speaker, "李四");
+  assert.equal(parsed.messages[3].text, "好啊");
+});
+
 test("未知角色不强行交替", () =>
   assert.ok(parseChat("没有说话人的一句话").warnings.length));
 test("手机复制的无昵称多行会保留为多条待分配消息", () => {

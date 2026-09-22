@@ -64,22 +64,9 @@ type SpeechRecognitionLike = {
 };
 
 /**
- * 微信多选复制粘贴编辑器 (RichPasteEditor)
- * 
- * 变更记录与问题解决：
- * 【问题根因】
- * 微信在手机端复制多条聊天记录时，为了兼容性会将第一条消息放入系统剪贴板的纯文本（text/plain）通道，
- * 而将包含完整全部消息的记录存放在富文本 HTML 通道（text/html）或拆分为多个 ClipData.Item。
- * 普通 textarea 默认只接收 text/plain，导致粘贴后仅显示第一条消息。
- * 
- * 【修复方案】
- * 1. 在保持原生 textarea 元素及其所有样式、属性完全不变的前提下，拦截 onPaste 事件。
- * 2. 同步提取剪贴板中的 text/html 及 text/plain，调用 readClipboardData，如果有包含多条消息的富文本，
- *    立即提取完整文本填入，无延迟、不卡顿。
- * 3. 同步调用 preventDefault()，彻底阻止原生浏览器仅填入单条 text/plain。
- * 4. 异步调用 readClipboardPaste 处理 Android 系统的多项 ClipData.Item 或系统剪贴板备选内容，
- *    确保在任何微信多选复制场景下都能完整提取所有聊天记录。
- * 5. 精确计算并保留光标位置与选区替换，编辑体验与普通 textarea 完全一致。
+ * 聊天记录粘贴编辑器 (RichPasteEditor)
+ * 采用原生非受控机制，不拦截 event.preventDefault()，确保浏览器与输入法的原生粘贴流水线完整工作，
+ * 解决移动端/微信多选复制多条时因 React 同步重渲染中断 Android 剪贴板片段写入的问题。
  */
 function RichPasteEditor({
   value,
@@ -88,67 +75,64 @@ function RichPasteEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const handlePaste = async (
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isPastingRef = useRef(false);
+  const pasteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (textareaRef.current && !isPastingRef.current) {
+      if (textareaRef.current.value !== value) {
+        textareaRef.current.value = value;
+      }
+    }
+  }, [value]);
+
+  useEffect(() => {
+    return () => {
+      if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
+    };
+  }, []);
+
+  const handlePaste = (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
-    const clipData = event.clipboardData;
-    if (!clipData) return;
+    // 绝对不调用 event.preventDefault()，允许浏览器与输入法原生的粘贴流水线完整工作
+    isPastingRef.current = true;
+    if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
 
-    // 1. 同步读取剪贴板中的即时数据（text/plain 与 text/html）
-    const plain =
-      clipData.getData("text/plain") || clipData.getData("text") || "";
-    const immediate = readClipboardData(clipData);
+    // 延迟等待浏览器与输入法将剪贴板的所有片段完整交付到 DOM 节点
+    pasteTimerRef.current = setTimeout(() => {
+      isPastingRef.current = false;
+      const el = textareaRef.current;
+      if (!el) return;
+      onChange(el.value);
+    }, 60);
+  };
 
-    // 阻止浏览器默认只取 text/plain（即只粘贴第一条）的截断行为
-    event.preventDefault();
-
-    const textarea = event.currentTarget;
-    const start = textarea.selectionStart ?? 0;
-    const end = textarea.selectionEnd ?? textarea.value.length;
-    const prevValue = textarea.value;
-
-    const applyText = (text: string) => {
-      if (!text) return;
-      const next = prevValue.slice(0, start) + text + prevValue.slice(end);
-      onChange(next);
-      requestAnimationFrame(() => {
-        try {
-          textarea.selectionStart = textarea.selectionEnd = start + text.length;
-        } catch {}
-      });
-    };
-
-    // 优先填入立即读取到的完整内容（若 HTML 包含完整多条，即刻呈现）
-    if (immediate) {
-      applyText(immediate);
-    } else if (plain) {
-      applyText(plain);
+  const handleInput = (event: React.FormEvent<HTMLTextAreaElement>) => {
+    const el = event.currentTarget;
+    if (isPastingRef.current) {
+      // 粘贴过程中连续触发 input（如多片段依次写入），重置防抖计时，避免 React 中断后续片段写入
+      if (pasteTimerRef.current) clearTimeout(pasteTimerRef.current);
+      pasteTimerRef.current = setTimeout(() => {
+        isPastingRef.current = false;
+        onChange(el.value);
+      }, 60);
+      return;
     }
-
-    // 2. 异步补充检查系统剪贴板与 Android ClipData items，确保获取多项合并后的完整记录
-    try {
-      const clipboardReader =
-        typeof navigator !== "undefined" && navigator.clipboard
-          ? navigator.clipboard
-          : undefined;
-      const complete = await readClipboardPaste(clipData, clipboardReader);
-      if (complete && complete !== immediate && complete !== plain) {
-        applyText(complete);
-      }
-    } catch {
-      // 降级使用已填入的 immediate 内容
-    }
+    onChange(el.value);
   };
 
   return (
     <textarea
+      ref={textareaRef}
       className="bulk-editor rich-paste-editor"
       aria-label="聊天记录"
       id="bulk-chat-editor"
       placeholder={"Crush：第一条消息\n我：第二条消息"}
-      value={value}
-      onChange={(event) => onChange(event.currentTarget.value)}
+      defaultValue={value}
       onPaste={handlePaste}
+      onInput={handleInput}
     />
   );
 }
@@ -553,6 +537,7 @@ export default function App() {
     setRole(
       nextNames.includes(self) ? self : nextNames.includes("我") ? "我" : "",
     );
+
   }
   function openBulkEditor(value = input) {
     updateBulkText(value);
@@ -585,9 +570,7 @@ export default function App() {
         // 无权限时走原流程引导长按粘贴
       }
     }
-    setImportStatus(
-      "请在上方输入区长按，选择“粘贴”。这是手机浏览器能接收微信完整多条记录的可靠入口。",
-    );
+    setImportStatus("输入框已聚焦，请长按选择“粘贴”。");
   }
   async function importImages(files: FileList | null) {
     if (!files?.length || ocrBusy) return;
@@ -1060,7 +1043,7 @@ export default function App() {
               导入 TXT
             </button>
             <button disabled={ocrBusy} onClick={focusNativePaste}>
-              长按粘贴完整记录
+              读取剪贴板
             </button>
             <input
               hidden

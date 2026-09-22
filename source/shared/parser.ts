@@ -12,9 +12,21 @@ export function parseChat(raw: string): {
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
   const messages: Parsed[] = [];
   const warnings: string[] = [];
-  const nativeFormat = lines.some((l) =>
-    /^\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}/.test(l.trim()),
-  );
+
+  let nativeHeaderCount = 0;
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (
+      lines[i].trim() &&
+      /^\d{4}年\d{1,2}月\d{1,2}日\s+\d{1,2}:\d{2}(?::\d{2})?$/.test(lines[i + 1]?.trim())
+    ) {
+      nativeHeaderCount++;
+    }
+  }
+  const inlineCount = lines.filter((l) =>
+    /^([^\s：:<>]{1,24})[：:]\s*(.*)$/.test(l.trim()),
+  ).length;
+  const nativeFormat = nativeHeaderCount >= 1 && nativeHeaderCount >= inlineCount;
+
   let current: Parsed | undefined;
   const push = () => {
     if (current?.text.trim())
@@ -36,6 +48,16 @@ export function parseChat(raw: string): {
     }
     if (!line.trim()) {
       if (current) current.text += "\n";
+      continue;
+    }
+
+    // 过滤常见时间分割线、会话标题与居中装饰线
+    if (
+      !current &&
+      (/^(?:微信聊天记录|群聊的聊天记录|聊天记录)$/.test(line.trim()) ||
+        /^(?:——+|—+|-+)\s*.*?\s*(?:——+|—+|-+)$/.test(line.trim()) ||
+        /^(?:\d{4}年|\d{4}[-/])?\d{1,2}[月/-]\d{1,2}[日]?\s*(?:\d{1,2}:\d{2}(?::\d{2})?)?$/.test(line.trim()))
+    ) {
       continue;
     }
     const b = line.match(bracket);
