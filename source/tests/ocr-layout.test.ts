@@ -34,3 +34,19 @@ test("同一个多行气泡会合并并过滤低可信乱码", () => {
   );
   assert.deepEqual(result, ["小林：这是一条很长的两行聊天内容", "我：好的"]);
 });
+test("截图气泡末尾的头像与小图标残片会被裁掉", () => {
+  const result = chatLinesFromLayout(
+    [
+      { text: "你通宵吗一 Un", confidence: 86, group: 1, bbox: { x0: 120, y0: 100, x1: 390, y1: 136 } },
+      { text: "这个变声器好强 | )", confidence: 83, group: 2, bbox: { x0: 510, y0: 180, x1: 910, y1: 220 } },
+      { text: "你原声就很强了一 as", confidence: 80, group: 3, bbox: { x0: 120, y0: 260, x1: 430, y1: 300 } },
+    ],
+    1000,
+    "Sue",
+  );
+  assert.deepEqual(result, [
+    "Sue：你通宵吗",
+    "我：这个变声器好强",
+    "Sue：你原声就很强了",
+  ]);
+});
