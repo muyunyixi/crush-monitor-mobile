@@ -80,3 +80,25 @@ test("read 返回一条时仍比较 readText 的完整文本", async () => {
   });
   assert.equal(result, "第一条\n第二条\n第三条");
 });
+
+test("读取按钮优先请求未净化的微信 HTML", async () => {
+  let requested = false;
+  const result = await readClipboardText({
+    read: async (options) => {
+      requested = options?.unsanitized?.includes("text/html") === true;
+      return [
+        {
+          types: ["text/plain", "text/html"],
+          getType: async (type) =>
+            new Blob([
+              type === "text/html"
+                ? "<div>第一条</div><div>第二条</div><div>第三条</div>"
+                : "第一条",
+            ]),
+        },
+      ];
+    },
+  });
+  assert.equal(requested, true);
+  assert.equal(result, "第一条\n第二条\n第三条");
+});
