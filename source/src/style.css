@@ -1717,6 +1717,15 @@ body {
   border-radius: 5px;
   color: #326249;
 }
+.import-modal .import-tip {
+  margin: 0;
+  font-size: 12px;
+  color: #326249;
+  background: #edf5ef;
+  padding: 7px 10px;
+  border-radius: 5px;
+  text-align: center;
+}
 .import-modal .import-status {
   background: #fff6de;
   padding: 6px 8px;

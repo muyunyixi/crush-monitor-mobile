@@ -40,12 +40,7 @@ import {
 } from "../shared/types";
 import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
-import {
-  normalizeClipboardText,
-  readClipboardData,
-  readClipboardPaste,
-  readClipboardText,
-} from "./clipboard";
+import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
@@ -545,33 +540,7 @@ export default function App() {
     setImportStatus("");
     setBulkEditing(true);
   }
-  /**
-   * 长按粘贴或一键读取完整微信聊天记录
-   * 变更记录：
-   * 优先尝试调用 navigator.clipboard 读取完整记录，若成功则一键填入；
-   * 若浏览器限制权限，则自动聚焦输入框并提示用户长按粘贴，由上面的 handlePaste 拦截并恢复完整多条记录。
-   */
-  async function focusNativePaste() {
-    const editor = document.getElementById("bulk-chat-editor");
-    editor?.focus();
-    if (editor instanceof HTMLTextAreaElement) {
-      editor.select();
-    }
-    // 优先尝试读取系统剪贴板中的完整记录
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      try {
-        const text = await readClipboardText(navigator.clipboard);
-        if (text) {
-          updateBulkText(text);
-          setImportStatus("已成功从剪贴板读取完整聊天记录。");
-          return;
-        }
-      } catch {
-        // 无权限时走原流程引导长按粘贴
-      }
-    }
-    setImportStatus("输入框已聚焦，请长按选择“粘贴”。");
-  }
+
   async function importImages(files: FileList | null) {
     if (!files?.length || ocrBusy) return;
     setOcrBusy(true);
@@ -1007,7 +976,7 @@ export default function App() {
       {bulkEditing && (
         <Modal title="粘贴整段聊天" close={() => setBulkEditing(false)}>
           <p className="bulk-help">
-            直接长按粘贴会使用浏览器原生粘贴。截图识字会裁掉状态栏和输入栏，并按左右气泡区分双方。
+            截图识字会裁掉状态栏和输入栏，并按左右气泡区分双方。
           </p>
           <label className="field required-field import-relation">
             当前关系状态（必选）
@@ -1042,9 +1011,6 @@ export default function App() {
             >
               导入 TXT
             </button>
-            <button disabled={ocrBusy} onClick={focusNativePaste}>
-              读取剪贴板
-            </button>
             <input
               hidden
               ref={imageInput}
@@ -1061,6 +1027,9 @@ export default function App() {
               onChange={(e) => void importText(e.target.files?.[0])}
             />
           </div>
+          <p className="import-tip">
+            请选择输入法剪切板中的内容直接粘贴
+          </p>
           {importStatus && (
             <p className="import-status" role="status">
               {importStatus}
