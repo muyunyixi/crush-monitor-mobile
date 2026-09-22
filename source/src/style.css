@@ -1549,12 +1549,6 @@ body {
   border-color: #78a68b;
   box-shadow: 0 0 0 2px rgba(120, 166, 139, 0.14);
 }
-.rich-paste-editor:empty::before {
-  content: attr(data-placeholder);
-  white-space: pre;
-  color: #999;
-  pointer-events: none;
-}
 .required-field select:invalid {
   color: #8c918e;
 }
