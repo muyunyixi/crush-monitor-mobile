@@ -42,8 +42,6 @@ import { exampleText } from "../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
 import {
   normalizeClipboardText,
-  readClipboardData,
-  readClipboardText,
 } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
@@ -62,33 +60,6 @@ type SpeechRecognitionLike = {
   stop(): void;
 };
 
-function moveCaretToEnd(element: HTMLElement) {
-  const selection = window.getSelection();
-  if (!selection) return;
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-}
-
-function insertTextAtCaret(element: HTMLElement, text: string) {
-  const selection = window.getSelection();
-  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-  if (!range || !element.contains(range.commonAncestorContainer)) {
-    element.append(document.createTextNode(text));
-    moveCaretToEnd(element);
-    return;
-  }
-  range.deleteContents();
-  const node = document.createTextNode(text);
-  range.insertNode(node);
-  range.setStartAfter(node);
-  range.collapse(true);
-  selection!.removeAllRanges();
-  selection!.addRange(range);
-}
-
 function RichPasteEditor({
   value,
   onChange,
@@ -96,80 +67,14 @@ function RichPasteEditor({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const receivingRichPaste = useRef(false);
-  const pasteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function editorText(editor: HTMLElement) {
-    return editor.innerText
-      .replace(/\r\n?|\u2028|\u2029/g, "\n")
-      .replace(/\u00a0/g, " ");
-  }
-
-  function finishPaste(editor: HTMLDivElement) {
-    if (pasteTimer.current) clearTimeout(pasteTimer.current);
-    pasteTimer.current = setTimeout(() => {
-      const text = editorText(editor);
-      receivingRichPaste.current = false;
-      // Strip styles, images and links only after every clipboard fragment has
-      // landed. Updating React state earlier can interrupt Android multi-item
-      // paste after its first fragment.
-      editor.textContent = text;
-      moveCaretToEnd(editor);
-      onChange(text);
-    }, 120);
-  }
-
-  useEffect(() => {
-    const editor = ref.current;
-    if (
-      editor &&
-      !receivingRichPaste.current &&
-      editor.innerText !== value
-    )
-      editor.textContent = value;
-  }, [value]);
-
-  useEffect(
-    () => () => {
-      if (pasteTimer.current) clearTimeout(pasteTimer.current);
-    },
-    [],
-  );
-
   return (
-    <div
-      ref={ref}
+    <textarea
       className="bulk-editor rich-paste-editor"
-      contentEditable
-      suppressContentEditableWarning
-      role="textbox"
       aria-label="聊天记录"
       id="bulk-chat-editor"
-      aria-multiline="true"
-      data-placeholder="Crush：第一条消息\A我：第二条消息"
-      onPaste={(event) => {
-        const plain = normalizeClipboardText(
-          event.clipboardData.getData("text/plain"),
-        );
-        const complete = readClipboardData(event.clipboardData);
-        receivingRichPaste.current = true;
-        if (complete && complete !== plain && complete.length > plain.length) {
-          // Some WeChat versions expose only the first selected message as
-          // text/plain but keep the complete selection in text/html.
-          event.preventDefault();
-          insertTextAtCaret(event.currentTarget, complete);
-          finishPaste(event.currentTarget);
-        }
-      }}
-      onInput={(event) => {
-        const editor = event.currentTarget;
-        if (receivingRichPaste.current) {
-          finishPaste(editor);
-          return;
-        }
-        onChange(editorText(editor));
-      }}
+      placeholder={"Crush：第一条消息\n我：第二条消息"}
+      value={value}
+      onChange={(event) => onChange(event.currentTarget.value)}
     />
   );
 }
@@ -273,23 +178,6 @@ export default function App() {
   const imageInput = useRef<HTMLInputElement>(null);
   const textInput = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  function acceptPastedText(text: string) {
-    const normalized = normalizeClipboardText(text);
-    setInput(normalized);
-    const count = normalized.split("\n").filter((line) => line.trim()).length;
-    setNotice(
-      count > 1
-        ? `已完整粘贴 ${count} 行，请核对后分析。`
-        : "已粘贴，请核对后点击分析。",
-    );
-  }
-  async function pasteFromPhone() {
-    try {
-      acceptPastedText(await readClipboardText(navigator.clipboard));
-    } catch {
-      setNotice("请长按输入框，选择粘贴。");
-    }
-  }
   function submitInput() {
     if (!messages.length && !relationConfirmed) {
       openBulkEditor(input);
@@ -597,21 +485,6 @@ export default function App() {
     setBulkRelation(relationConfirmed ? relation : "crush");
     setImportStatus("");
     setBulkEditing(true);
-  }
-  async function readAllIntoBulk() {
-    const revision = pasteRevision.current;
-    try {
-      const text = await readClipboardText(navigator.clipboard);
-      if (revision !== pasteRevision.current) return;
-      updateBulkText(text);
-      setImportStatus(
-        parseChat(text).messages.length <= 1
-          ? "系统读取接口只开放了一条。请点“长按粘贴完整记录”，再在输入区长按选择“粘贴”；原生粘贴可以读取微信全部记录。"
-          : "已读取，请核对消息数量和发送方。",
-      );
-    } catch {
-      setImportStatus("无法直接读取，请长按粘贴，或用截图识字 / TXT 导入。");
-    }
   }
   function focusNativePaste() {
     const editor = document.getElementById("bulk-chat-editor");
@@ -1089,9 +962,6 @@ export default function App() {
               onClick={() => textInput.current?.click()}
             >
               导入 TXT
-            </button>
-            <button disabled={ocrBusy} onClick={readAllIntoBulk}>
-              尝试直接读取
             </button>
             <button disabled={ocrBusy} onClick={focusNativePaste}>
               长按粘贴完整记录
