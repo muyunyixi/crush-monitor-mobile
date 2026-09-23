@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.5.1-calibration-pair";
+const SCREENSHOT_VERSION = "v2.5.2-peach-guide";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -2108,7 +2108,10 @@ export default function App() {
                   {/* 方案 2: 完全独立的手工 Canvas 排版器 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
-                      <span className="scheme-tag">⭐ 方案 2（vivo 首选修复）</span>
+                      <span className="scheme-tag recommended">
+                        <span className="scheme-peach" aria-hidden="true">🍑</span>
+                        方案 2（vivo 首选修复 · 桃子点这个）
+                      </span>
                     </div>
                     <div className="scheme-title">实测字形手工 Canvas 引擎</div>
                     <div className="scheme-desc">

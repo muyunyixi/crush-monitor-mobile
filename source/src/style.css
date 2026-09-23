@@ -3159,6 +3159,25 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   color: #07c160;
 }
 
+.scheme-tag.recommended {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 16px;
+}
+
+.scheme-peach {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  font-size: 13px;
+  line-height: 1;
+  transform: translateY(-0.25px);
+}
+
 .scheme-tag.optional {
   color: #637788;
 }
