@@ -48,6 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
+const SCREENSHOT_VERSION = "v1.2.0-baseline-calibrated";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -494,6 +495,31 @@ export default function App() {
             el.style.width = "414px";
             el.style.minWidth = "414px";
             el.style.maxWidth = "414px";
+
+            // 彻底解决 html2canvas 内部 FontMetrics 采样导致的中文文字下沉基线偏移：
+            // 针对气泡、头像、意图/情绪标签、评级胶囊，在克隆树中做统一轻微上移与行盒固化
+            const avatars = el.querySelectorAll<HTMLElement>(".avatar");
+            avatars.forEach((av) => {
+              av.style.display = "flex";
+              av.style.alignItems = "center";
+              av.style.justifyContent = "center";
+              av.style.lineHeight = "1";
+              av.style.paddingBottom = "3px"; // 抵消安卓字体基准下沉
+            });
+
+            const tags = el.querySelectorAll<HTMLElement>(".emotion-tag, .intent-tag, .reply-tag");
+            tags.forEach((tag) => {
+              tag.style.display = "inline-flex";
+              tag.style.alignItems = "center";
+              tag.style.justifyContent = "center";
+              tag.style.paddingBottom = "2px"; // 抵消胶囊标签内文字下沉
+            });
+
+            const bubbles = el.querySelectorAll<HTMLElement>(".bubble");
+            bubbles.forEach((b) => {
+              b.style.paddingTop = "7px";
+              b.style.paddingBottom = "9px";
+            });
           }
         },
       });
@@ -1443,12 +1469,12 @@ export default function App() {
                         ⚠️ 微信内保存长图提示
                       </div>
                       <div>
-                        微信内置浏览器限制了直接下载。建议点击右上角<strong>【···】</strong>选择<strong>【在浏览器打开】</strong>进行顺畅保存；或者在下方长按图片选择<strong>【保存图片】</strong>。
+                        微信内置浏览器限制了直接下载。建议点击右上角<strong>【···】</strong>选择<strong>【在浏览器打开】</strong>进行顺畅保存；或者在下方长按图片选择<strong>【保存图片】</strong>。<span style={{ display: "inline-block", marginLeft: "6px", fontSize: "10px", color: "#8a5800", background: "#fff0cb", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>{SCREENSHOT_VERSION}</span>
                       </div>
                     </div>
                   ) : (
                     <div>
-                      <Sparkles size={15} /> 提示：在系统浏览器中可点击下方<strong>【保存长图到本地相册】</strong>一键下载，也可在手机上<strong>长按下方长图</strong>选择【保存图片】。
+                      <Sparkles size={15} /> 提示：在系统浏览器中可点击下方<strong>【保存长图到本地相册】</strong>一键下载，也可在手机上<strong>长按下方长图</strong>选择【保存图片】。<span style={{ display: "inline-block", marginLeft: "6px", fontSize: "10px", color: "#2b7a4c", background: "#e8f5e9", padding: "1px 5px", borderRadius: "3px", fontWeight: "bold" }}>{SCREENSHOT_VERSION}</span>
                     </div>
                   )}
                 </div>
