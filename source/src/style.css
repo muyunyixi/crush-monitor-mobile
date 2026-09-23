@@ -2428,6 +2428,8 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 .screenshot-render-target .avatar {
   width: 36px;
   height: 36px;
+  min-width: 36px;
+  min-height: 36px;
   border-radius: 4px;
   font-size: 15px;
   line-height: 36px;
@@ -2541,63 +2543,79 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   justify-content: center;
   pointer-events: none;
   font-size: 11px;
-  line-height: 1;
-  min-height: 19px;
+  line-height: 18px;
   height: 19px;
+  min-height: 19px;
+  max-height: 19px;
   border-radius: 4px;
   box-sizing: border-box;
   vertical-align: middle;
+  padding: 0;
+  overflow: hidden;
 }
 
 .screenshot-render-target .emotion-tag {
   padding: 0;
-  overflow: hidden;
 }
 
 .screenshot-render-target .emotion-tag span {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   height: 100%;
   padding: 0 5px;
-  line-height: 1;
+  line-height: 18px;
+  box-sizing: border-box;
 }
 
 .screenshot-render-target .emotion-tag b {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   height: 100%;
   padding: 0 5px;
-  line-height: 1;
+  line-height: 18px;
+  box-sizing: border-box;
 }
 
 .screenshot-render-target .intent-tag {
   display: inline-flex;
   align-items: center;
-  height: 19px;
+  justify-content: center;
   padding: 0 6px;
-  line-height: 1;
+  gap: 3px;
+}
+
+.screenshot-render-target .intent-tag span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 18px;
 }
 
 .screenshot-render-target .intent-tag b {
   display: inline-flex;
   align-items: center;
-  margin-left: 3px;
-  line-height: 1;
+  line-height: 18px;
 }
 
 .screenshot-render-target .reply-tag {
   display: inline-flex;
   align-items: center;
-  height: 19px;
+  justify-content: center;
   padding: 0 7px;
-  line-height: 1;
+  gap: 2px;
 }
 
-.screenshot-render-target .reply-tag span,
+.screenshot-render-target .reply-tag span {
+  display: inline-flex;
+  align-items: center;
+  line-height: 18px;
+}
+
 .screenshot-render-target .reply-tag b {
   display: inline-flex;
   align-items: center;
-  line-height: 1;
+  line-height: 18px;
 }
 
 /* 底部深度诊断报告卡片 */

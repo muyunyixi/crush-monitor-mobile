@@ -454,20 +454,46 @@ export default function App() {
       }
       await new Promise((r) => setTimeout(r, 80));
       const targetEl = screenshotContainerRef.current;
+      const renderWidth = targetEl.offsetWidth || 414;
+      const renderHeight = targetEl.scrollHeight || targetEl.offsetHeight;
+
       const canvas = await html2canvas(targetEl, {
         scale: 2,
         useCORS: true,
         allowTaint: false,
         backgroundColor: "#ededed",
         logging: false,
+        width: renderWidth,
+        height: renderHeight,
+        windowWidth: 414,
+        windowHeight: Math.max(renderHeight, 1000),
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
         onclone: (clonedDoc) => {
+          // 1. 隔离 HTML/Body 避免小屏全局缩放或基线污染
+          if (clonedDoc.documentElement) {
+            clonedDoc.documentElement.style.fontSize = "14px";
+            clonedDoc.documentElement.style.margin = "0";
+            clonedDoc.documentElement.style.padding = "0";
+          }
+          if (clonedDoc.body) {
+            clonedDoc.body.style.margin = "0";
+            clonedDoc.body.style.padding = "0";
+            clonedDoc.body.style.backgroundColor = "#ededed";
+          }
           const el = clonedDoc.querySelector(".screenshot-render-target") as HTMLElement | null;
           if (el) {
-            // 确保在克隆的 DOM 中保持绝对固定坐标与标准尺寸渲染，不受外部滚动与字体影响
-            el.style.position = "relative";
+            // 确保在克隆文档中处于确定物理流布局，清除负坐标
+            el.style.position = "static";
             el.style.left = "0";
             el.style.top = "0";
+            el.style.margin = "0";
             el.style.transform = "none";
+            el.style.width = "414px";
+            el.style.minWidth = "414px";
+            el.style.maxWidth = "414px";
           }
         },
       });
