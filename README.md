@@ -1,133 +1,101 @@
 # Crush Monitor Mobile · 好感监控器移动版
 
-面向手机浏览器的聊天分析工具，基于 [FerryCorleone/crush-monitor](https://github.com/FerryCorleone/crush-monitor) 开发。保留微信风格的聊天气泡，支持聊天导入、情绪和意图分析、回复评价，以及本地对话彩蛋。
+专为手机浏览器优化的聊天记录分析工具，保留极具真实感的微信界面风格。支持聊天文本/截图导入、情绪与沟通意图解析、回复质量评估、对话彩蛋发掘以及高清长截图导出。
 
 [在线体验](https://muyunyixi.github.io/crush-monitor-mobile/) · [上游项目](https://github.com/FerryCorleone/crush-monitor) · [MIT 许可证](LICENSE)
 
-> 分数描述模型在这段文字中识别到的信号，不是对方喜欢你的概率。请结合真实交流理解结果。
+> **免责提示**：分析结果基于 AI 模型对文本信号的提炼与推断，仅供娱乐与交流参考，不能代替人与人之间的真实沟通。
 
-## 功能
+---
 
-- 整段 / 单条输入：关系状态、文本编辑和身份确认在一个窗口完成。
-- 剪贴板兼容：比较纯文本、HTML 和多个文本项目；按光标位置粘贴，不覆盖整份草稿。
-- **截图识字**：浏览器本地识别中文和英文，支持一次选择最多 6 张截图；图片不会上传到分析接口。
-- **TXT 导入**：读取 UTF-8 文本文件，绕开手机剪贴板截断。
-- 情绪、意图、好感信号、回复评级及下一步建议。
-- 会话内恢复：当前标签页的聊天暂存在 sessionStorage，刷新后恢复文字；分析结果和个人 Key 不持久化。
-- 14 类对话彩蛋：御前频道、月下信号、同频笑点、你来我往、默契回声、夜航记录、饭搭子、共享歌单、毛茸茸频道、未来便签、善意回声、书页之间、双人副本、同一片天气。按聊天内容触发，本地计算，不消耗模型次数。
-- 服务端每日额度：未填写个人 Key 时，同一公网 IP 每天 10 个分析批次；填写有效个人 Key 后不受本站免费次数限制，仍受供应商额度约束。
+## 核心功能
 
-## 使用
+- **沉浸式微信 UI**：高仿微信聊天气泡交互，每一条消息下方直观展示该句的**情绪**、**意图**或**回复评级**。
+- **多途径便捷导入**：
+  - **整段文本/剪贴板**：支持微信多选复制的富文本和纯文本，智能识别角色、冒号与时间戳。
+  - **本地截图识字 (OCR)**：基于 Tesseract.js 在手机本地运行，自动裁切状态栏与输入框，按左右位置区分发言人；**图片完全在本地处理，绝不上传**。
+  - **TXT 文件导入**：支持 UTF-8 聊天导出文件，彻底避免手机剪贴板字数截断。
+- **深度关系与互动诊断**：
+  - 好感度指数、互动节奏（接话次数、发言比例统计）。
+  - 关系阶段推断与下一步沟通策略建议。
+- **本地对话彩蛋（14 种）**：包含“御前频道”、“月下信号”、“同频笑点”、“你来我往”、“饭搭子”等趣味彩蛋，纯本地规则即时发掘，不消耗分析额度。
+- **高清长截图导出**：
+  - 自选截取消息范围（最近 10 / 20 / 50 条或全部）与板块（概览档案、聊天消息、深度诊断）。
+  - 1:1 原生微信排版，自适应各机型字体大小（REM 布局），完美保留每句话的分析标签。
+  - 针对微信内置浏览器和系统浏览器适配了下载与长按保存指引。
+- **额度与个人 Key**：
+  - 默认免费额度：同一公网 IP 每天可免费体验 10 个分析批次（UTC 0 点重置）。
+  - 支持填入个人 TypeSafe API Key，解除站点次数限制，Key 仅保存在浏览器内存，刷新即焚。
 
-1. 选择“整段记录”，点击输入框打开导入窗口。
-2. 选择当前关系，粘贴文字，或点击“截图识字”“导入 TXT”。
-3. 核对文本、消息数量和发送方；无昵称时可逐条切换“我 / 对方”。
-4. 点击“开始分析”。点击消息标签或底部评分查看详情。
-5. 右上角进入聊天设置，修改后点击“保存设置”。
+---
 
-推荐文本格式：
+## 快速上手
+
+1. **导入聊天**：点击底部输入框或加号工具箱，选择“整段记录”或“导入 TXT / 截图识字”。
+2. **确认角色**：核对消息内容、数量和发言人（我 / 对方 / 关系类型）。
+3. **开始分析**：点击“开始分析”，系统将逐句标记对方的情绪、意图和我方的表达水平。
+4. **长截图分享**：点击“+”号选择“生成长截图”，勾选所需板块并选定条数，点击一键生成高清长图保存到本地相册。
+
+---
+
+## 目录结构
 
 ```text
-Crush：你一人做事一人当吧
-我：权利和责任并行
-Crush：哎确实 但唠朕的权利会不会不太好
-我：早晚ai会让灵气复苏的，到时候穿越了，我愿意辅助你做胶东的大皇帝，能力仅限于此
-Crush：你既然享有被朕教导的权利，就负起自己担当的责任吧
+├── index.html                 # 生产打包单文件（GitHub Pages 发布入口）
+├── ocr/                       # 本地 OCR 离线资源（WASM、Worker 与中英文训练数据）
+├── source/
+│   ├── src/                   # React 移动端前端源码、样式、组件与钩子
+│   ├── shared/                # 消息解析、彩蛋规则、类型定义与评分逻辑
+│   ├── server/                # 本地全栈开发/代理服务端
+│   ├── worker/                # Cloudflare Worker API、额度控制与 CORS
+│   └── tests/                 # 核心逻辑自动化回归测试
+└── .github/workflows/pages.yml # CI/CD 自动部署流程
 ```
 
-### 微信多条复制与截图识字
+---
 
-整段输入区使用可接收富文本的浏览器原生编辑面。部分手机上的微信多选复制会把第一条放进纯文本格式、把完整记录放进富文本格式；普通 `textarea` 只能得到第一条。当前编辑面会先接收微信的完整富文本，再立即提取可见文字并清除格式、图片和链接。“读取剪贴板”按钮仍可作为额外入口，但受浏览器剪贴板权限限制。
+## 本地开发与构建
 
-如果微信记录包含图片，或需要保留气泡左右关系，可选择“截图识字”：
+### 运行环境
+- Node.js 22.12+
+- npm
 
-- 自动裁掉顶部状态栏、标题栏和底部输入栏。
-- OCR 根据文字块距左右边缘的位置分类：左侧使用截图顶部识别出的聊天对象昵称，右侧标记为“我”。
-- 居中的时间和系统提示会被过滤；短图标和低可信乱码会被过滤。
-- 最多 6 张，每张最多 12 MB、2400 万像素，按文件选择顺序处理。
-- 识别在浏览器本机完成，不上传原图；识别文字仍需在弹窗中核对。
-- 识字本身不扣次数；点击“开始分析”后才会把确认的文字发送给分析服务。
-- OCR 必须通过 HTTP(S) 运行，并同时部署 `ocr/` 资源。
-## 架构与目录
-
-前端（GitHub Pages）通过 HTTPS 请求 Cloudflare Worker；Worker 验证来源并使用 TypeSafe 模型服务。Durable Object 保存每日额度与分析批次标识，刷新网页不能重置额度。
-
-| 路径 | 用途 |
-| --- | --- |
-| `index.html` | 自动构建的发布页面，不手工修改 |
-| `ocr/` | Actions 从锁定依赖复制的 OCR 运行资源 |
-| `source/src/` | React 前端、剪贴板、OCR、彩蛋 |
-| `source/shared/` | 类型、解析、评分规则 |
-| `source/worker/` | Worker API、跨域与额度 |
-| `source/tests/` | 回归测试 |
-| `.github/workflows/pages.yml` | Worker 部署、测试、构建和发布 |
-
-## 本地开发
-
-需要 Node.js 22.12+、npm。
+### 启动步骤
 
 ```bash
+# 1. 克隆仓库并进入源码目录
 git clone https://github.com/muyunyixi/crush-monitor-mobile.git
 cd crush-monitor-mobile/source
+
+# 2. 安装依赖
 npm ci
-```
 
-创建本地 `.env`，指定已部署 Worker：
+# 3. 配置本地环境变量 (.env)
+echo "VITE_ANALYSIS_ENDPOINT=https://your-worker-api.example.com" > .env
 
-```dotenv
-VITE_ANALYSIS_ENDPOINT=https://api.example.com
-```
+# 4. 运行单元测试
+npm test
 
-```bash
-npx vite --host 127.0.0.1
-node --import tsx --test tests/*.test.ts
+# 5. 启动本地开发服务
+npm run dev
+
+# 6. 编译生产包并同步发布文件
 npm run build
-npx vite preview --host 127.0.0.1
+cp dist/index.html ../index.html
 ```
 
-生产预览包含 `dist/ocr/`，截图识字请在生产预览验证。模型 Key 不得使用 `VITE_` 前缀或写入前端源码。
+---
 
-## 部署到 GitHub Pages + Cloudflare
+## 隐私与安全
 
-1. Fork 仓库，启用 Actions。Pages 选择从 `main` 分支根目录发布。
-2. 修改 `source/wrangler.toml` 的 Worker 名称及 `ALLOWED_ORIGIN`（前端域名的 origin，无路径）。保留 `USAGE_LIMITER` Durable Object 绑定和迁移。
-3. 在 GitHub Actions Secrets 设置 `CLOUDFLARE_API_TOKEN`。Fork 时将工作流的 `accountId` 改为自己的账户，建议使用 `${{ secrets.CLOUDFLARE_ACCOUNT_ID }}` 并设置对应 Secret；当前工作流保留本仓库部署账户。
-4. 在 Cloudflare Worker 设置 Secret `TYPESAFE_API_KEY`，用作公共分析 Key；已设置的无需重复添加。
-5. 在 GitHub Actions Variables 设置 `PUBLIC_WORKER_URL=https://api.example.com`。不填写时工作流使用 Wrangler 的部署 URL。
-6. 自定义 API 域名须先在 Worker 的 Custom Domains 中绑定。更新 URL 后重新运行工作流。
-7. 推送代码或手动运行 “Deploy Worker and mobile web”。工作流部署 Worker、检查 `/health`、运行测试、构建，再发布 `index.html` 和 `ocr/`。等待最终 Pages 工作流成功。
+- **隐私优先**：聊天文字仅保存在当前标签页的 `sessionStorage` 中，关闭或清空即销毁。
+- **截图不上传**：截图 OCR 识字全程在浏览器端由 WebAssembly 完成，图片不会上传至任何服务器。
+- **无状态中转**：个人 API Key 仅暂存在内存中，直接经由 Cloudflare Worker 中转至模型供应商，不作任何持久化落盘。
 
-注意：Fork 后还应修改工作流健康检查的 `Origin`。CORS 来源与前端实际域名必须一致。自定义域名不能保证所有网络都可稳定直连。
+---
 
-## 接口与额度
+## 开源协议与致谢
 
-| 接口 | 方法 | 用途 |
-| --- | --- | --- |
-| `/health` | GET | Worker 存活检查，不代表模型调用成功 |
-| `/api/quota` | GET | 查询剩余免费次数，不扣次数 |
-| `/api/analyze` | POST | 分析请求，按同一批次标识去重计次 |
-
-免费额度按 **UTC 日期**重置（北京时间 08:00），共享公网 IP 的用户共享额度。刷新会查询真实额度。上游失败的已提交批次可能仍占用一次免费额度。不得对 API 路径配置浏览器交互挑战，否则 fetch 无法完成。
-
-## 隐私
-
-- 个人 Key 只在页面内存中，刷新清空；分析时经 Worker 转发给模型供应商。
-- 聊天文字暂存在当前标签页的 sessionStorage；“清空聊天”会移除。浏览器的恢复会话功能可能恢复标签页数据，不能把关闭窗口视为可靠删除。
-- 模型分析会发送聊天文本到 Worker 和 TypeSafe。截图 OCR 在浏览器本地执行，图片不会发送给模型；语言资源可能被浏览器缓存。
-- 不要将真实聊天、Key、部署令牌提交到仓库或公开 issue。
-
-## 已知边界与排错
-
-- 未将上游 v1.1.0 的六维评分、无限历史和 IndexedDB 分析持久化整体移植；移动版维护自己的前后端协议。
-- 长记录超过分析范围会要求裁剪确认；OCR 不会绕过分析长度限制。
-- 只看到空白：确认打开的是发布根目录构建文件，不能双击 `source/index.html`。
-- 仍是旧界面：重新打开线上 URL，检查最新 Actions 和 Pages 是否都成功。
-- CORS / Failed to fetch：检查 Worker 域名、`ALLOWED_ORIGIN`、TLS 和网络；不要直连 TypeSafe 官方 API。
-- 429：查看聊天区系统提示，等待额度重置或使用自己的有效 Key。
-- OCR 加载失败：确认发布目录含 `ocr/worker.min.js`、WASM 与两个语言文件，检查网络和浏览器 WebAssembly 支持。
-
-## 贡献与许可
-
-欢迎提交可复现问题和 Pull Request。问题请附手机系统、微信版本、浏览器版本、脱敏示例及预期 / 实际行为。修改源码后运行测试与生产构建，不手工编辑生成文件。
-
-本项目采用 [MIT](LICENSE)；保留原作者版权和许可。感谢 [FerryCorleone/crush-monitor](https://github.com/FerryCorleone/crush-monitor)。本项目不是微信官方产品，与腾讯无隶属关系。OCR 使用 [Tesseract.js](https://github.com/naptha/tesseract.js) 和相应语言数据，遵循各自许可证。
+- 本项目基于 [MIT 许可证](LICENSE) 开源。
+- 灵感与算法源自原项目 [FerryCorleone/crush-monitor](https://github.com/FerryCorleone/crush-monitor)，在此致以谢意。
+- 本项目为第三方开源工具，非腾讯微信官方产品，与微信及腾讯公司无任何隶属关系。
