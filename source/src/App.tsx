@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.3.0-vivo-baseline-lab";
+const SCREENSHOT_VERSION = "v2.4.0-vivo-render-lab";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -283,8 +283,14 @@ export default function App() {
   const [screenshotGenerating, setScreenshotGenerating] = useState(false);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
   const [isScrollMode, setIsScrollMode] = useState(false);
-  type ScreenshotEngine = "native" | "canvas-3" | "dom-2" | "dom-4";
-  const [screenshotEngine, setScreenshotEngine] = useState<ScreenshotEngine>("dom-2");
+  type ScreenshotEngine =
+    | "native"
+    | "svg-dom"
+    | "foreign-object"
+    | "canvas-3"
+    | "dom-2"
+    | "dom-4";
+  const [screenshotEngine, setScreenshotEngine] = useState<ScreenshotEngine>("native");
   const [screenshotModeType, setScreenshotModeType] = useState<"card" | "chat">("card");
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const screenshotContainerRef = useRef<HTMLDivElement>(null);
@@ -449,7 +455,7 @@ export default function App() {
     return messages;
   })();
 
-  async function handleGenerateScreenshot(mode: ScreenshotEngine = "dom-2") {
+  async function handleGenerateScreenshot(mode: ScreenshotEngine = "native") {
     if (!screenshotContainerRef.current) return;
     setScreenshotGenerating(true);
     setScreenshotEngine(mode);
@@ -487,8 +493,58 @@ export default function App() {
       const renderWidth = targetEl.offsetWidth || 414;
       const renderHeight = targetEl.scrollHeight || targetEl.offsetHeight;
 
+      // 独立 SVG/DOM 渲染链路：不让 html2canvas 重新计算中文字体 baseline。
+      // 浏览器先按真实 DOM 完成排版，再把 foreignObject 整体栅格化为 PNG。
+      if (mode === "svg-dom") {
+        const clone = targetEl.cloneNode(true) as HTMLElement;
+        clone.style.position = "static";
+        clone.style.left = "0";
+        clone.style.top = "0";
+        clone.style.margin = "0";
+        clone.style.transform = "none";
+        clone.style.width = "414px";
+        clone.style.minWidth = "414px";
+        clone.style.maxWidth = "414px";
+
+        const cssText = Array.from(document.styleSheets)
+          .map((sheet) => {
+            try {
+              return Array.from(sheet.cssRules).map((rule) => rule.cssText).join("\n");
+            } catch {
+              return "";
+            }
+          })
+          .join("\n");
+        const serialized = new XMLSerializer().serializeToString(clone);
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${renderWidth}px;height:${renderHeight}px;background:#ededed"><style>${cssText.replace(/<\/style/gi, "<\\/style")}</style>${serialized}</div></foreignObject></svg>`;
+        const objectUrl = URL.createObjectURL(
+          new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+        );
+        try {
+          const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const nextImage = new Image();
+            nextImage.onload = () => resolve(nextImage);
+            nextImage.onerror = () => reject(new Error("SVG DOM rasterization failed"));
+            nextImage.src = objectUrl;
+          });
+          const svgCanvas = document.createElement("canvas");
+          svgCanvas.width = renderWidth * 2;
+          svgCanvas.height = renderHeight * 2;
+          const svgContext = svgCanvas.getContext("2d");
+          if (!svgContext) throw new Error("Canvas 2D context unavailable");
+          svgContext.fillStyle = "#ededed";
+          svgContext.fillRect(0, 0, svgCanvas.width, svgCanvas.height);
+          svgContext.drawImage(image, 0, 0, svgCanvas.width, svgCanvas.height);
+          setScreenshotDataUrl(svgCanvas.toDataURL("image/png"));
+          return;
+        } finally {
+          URL.revokeObjectURL(objectUrl);
+        }
+      }
+
       const canvas = await html2canvas(targetEl, {
         scale: 2,
+        foreignObjectRendering: mode === "foreign-object",
         useCORS: true,
         allowTaint: false,
         backgroundColor: "#ededed",
@@ -1830,16 +1886,16 @@ export default function App() {
                 )}
 
                 <div className="screenshot-scheme-container">
-                  <div className="screenshot-scheme-header">vivo 字体基线实验室（4 档图片引擎 + 2 套系统方案，版本 {SCREENSHOT_VERSION}）：</div>
+                  <div className="screenshot-scheme-header">长图渲染方案（按建议测试顺序排列，版本 {SCREENSHOT_VERSION}）：</div>
 
-                  {/* 方案 1: DOM 文字轻校准，不移动气泡与标签背景 */}
+                  {/* 方案 1: 不做修正的正式标准版 */}
                   <div className="screenshot-scheme-card active-scheme">
                     <div className="scheme-badge-row">
-                      <span className="scheme-tag">⭐ 方案 1（推荐先试 · vivo DOM 轻校准）</span>
+                      <span className="scheme-tag">方案 1（标准原版 · 默认）</span>
                     </div>
-                    <div className="scheme-title">只将气泡与分析标签文字上移 2px</div>
+                    <div className="scheme-title">标准 Canvas 长图</div>
                     <div className="scheme-desc">
-                      在截图副本中只移动文字，不移动气泡、头像与标签背景；不会影响正常页面。
+                      不修改字体、坐标或布局。多数手机直接使用此方案，也是判断设备是否存在偏移的基准。
                     </div>
                     <button
                       type="button"
@@ -1849,26 +1905,116 @@ export default function App() {
                         (!includeHeader && !includeMessages && !includeAnalysis) ||
                         (includeMessages && screenshotMessages.length === 0)
                       }
-                      onClick={() => handleGenerateScreenshot("dom-2")}
+                      onClick={() => handleGenerateScreenshot("native")}
                     >
-                      {screenshotGenerating && screenshotEngine === "dom-2" ? (
-                        <>⏳ 正在生成 DOM 轻校准长图...</>
+                      {screenshotGenerating && screenshotEngine === "native" ? (
+                        <>⏳ 正在生成标准长图...</>
                       ) : (
                         <>
-                          <Camera size={16} /> 生成【方案 1：文字上移 2px】
+                          <Camera size={16} /> 生成【方案 1：标准原版】
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* 方案 2: DOM 文字强校准 */}
+                  {/* 方案 2: 绕过 html2canvas 文本基线计算的独立 DOM/SVG 引擎 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 2（vivo DOM 强校准）</span>
+                      <span className="scheme-tag">⭐ 方案 2（vivo 首选修复）</span>
                     </div>
-                    <div className="scheme-title">只将气泡与分析标签文字上移 4px</div>
+                    <div className="scheme-title">真实 DOM → SVG 栅格化</div>
                     <div className="scheme-desc">
-                      若方案 1 仍明显偏下，再试此档；其余布局与方案 1 完全相同。
+                      绕过 html2canvas 的中文字体基线计算，让浏览器先按真实页面完成排版，再整体生成 PNG；<strong>不是把文字上移</strong>，是本次最有针对性的修复。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        screenshotGenerating ||
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => handleGenerateScreenshot("svg-dom")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "svg-dom" ? (
+                        <>⏳ 正在用 DOM/SVG 生成长图...</>
+                      ) : (
+                        <>
+                          <Camera size={16} /> 生成【方案 2：vivo DOM/SVG】
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 方案 3: html2canvas 自带的 foreignObject 路线 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 3（浏览器 DOM 渲染）</span>
+                    </div>
+                    <div className="scheme-title">html2canvas ForeignObject 引擎</div>
+                    <div className="scheme-desc">
+                      让 html2canvas 借助浏览器的 DOM/SVG 排版能力生成图片，是方案 2 的兼容型替代实现，同样不手动移动文字。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
+                      onClick={() => handleGenerateScreenshot("foreign-object")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "foreign-object" ? <>⏳ 正在生成浏览器 DOM 长图...</> : <><Camera size={16} /> 生成【方案 3：ForeignObject】</>}
+                    </button>
+                  </div>
+
+                  {/* 方案 4: Canvas 绘字阶段的基线补偿 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 4（Canvas 基线补偿）</span>
+                    </div>
+                    <div className="scheme-title">绘字坐标上移 3px</div>
+                    <div className="scheme-desc">
+                      只在 Canvas 真正绘制文字时修正 vivo 的字体度量误差，不改 DOM 布局，适合前两种 DOM 路线在该浏览器不可用时测试。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
+                      onClick={() => handleGenerateScreenshot("canvas-3")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "canvas-3" ? <>⏳ 正在生成 Canvas 校准长图...</> : <><Camera size={16} /> 生成【方案 4：Canvas 校准】</>}
+                    </button>
+                  </div>
+
+                  {/* 方案 5: 克隆 DOM 内的温和文字微调 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 5（局部轻校准）</span>
+                    </div>
+                    <div className="scheme-title">仅问题文字上移 2px</div>
+                    <div className="scheme-desc">
+                      只在截图副本中移动气泡、头像及分析标签里的文字，背景、边框和正常聊天页保持不动。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        screenshotGenerating ||
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => handleGenerateScreenshot("dom-2")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "dom-2" ? <>⏳ 正在生成局部轻校准长图...</> : <><Camera size={16} /> 生成【方案 5：局部上移 2px】</>}
+                    </button>
+                  </div>
+
+                  {/* 方案 6: 更强的局部文字微调 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 6（局部强校准）</span>
+                    </div>
+                    <div className="scheme-title">仅问题文字上移 4px</div>
+                    <div className="scheme-desc">
+                      仅当方案 5 修正幅度仍不够时使用，用于偏移特别明显的 vivo 浏览器版本。
                     </div>
                     <button
                       type="button"
@@ -1880,100 +2026,7 @@ export default function App() {
                       }
                       onClick={() => handleGenerateScreenshot("dom-4")}
                     >
-                      {screenshotGenerating && screenshotEngine === "dom-4" ? (
-                        <>⏳ 正在生成 DOM 强校准长图...</>
-                      ) : (
-                        <>
-                          <Camera size={16} /> 生成【方案 2：文字上移 4px】
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                  {/* 方案 3: Canvas 底层校准，保留用于判断 vivo 引擎差异 */}
-                  <div className="screenshot-scheme-card">
-                    <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 3（Canvas 底层校准）</span>
-                    </div>
-                    <div className="scheme-title">Canvas fillText 全局上移 3px</div>
-                    <div className="scheme-desc">
-                      与前两档采用完全不同的机制，用来判断 vivo 浏览器是否忽略 DOM 校准。
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary screenshot-generate-btn"
-                      disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
-                      onClick={() => handleGenerateScreenshot("canvas-3")}
-                    >
-                      {screenshotGenerating && screenshotEngine === "canvas-3" ? <>⏳ 正在生成 Canvas 校准长图...</> : <><Camera size={16} /> 生成【方案 3：Canvas 上移 3px】</>}
-                    </button>
-                  </div>
-
-                  {/* 方案 4: 标准无补偿基准图 */}
-                  <div className="screenshot-scheme-card">
-                    <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 4（标准基准图）</span>
-                    </div>
-                    <div className="scheme-title">不施加任何字体偏移</div>
-                    <div className="scheme-desc">
-                      作为对照组，方便确认偏移来自设备字体 metrics，还是页面本身的 padding。
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary screenshot-generate-btn"
-                      disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
-                      onClick={() => handleGenerateScreenshot("native")}
-                    >
-                      {screenshotGenerating && screenshotEngine === "native" ? <>⏳ 正在生成标准基准图...</> : <><Camera size={16} /> 生成【方案 4：标准原版】</>}
-                    </button>
-                  </div>
-
-                  {/* 方案 5: 浏览器系统打印导出长 PDF / 长文档 */}
-                  <div className="screenshot-scheme-card">
-                    <div className="scheme-badge-row">
-                      <span className="scheme-tag print-tag">方案 5（系统原生排版）</span>
-                    </div>
-                    <div className="scheme-title">调用系统打印 / 导出 PDF 长文</div>
-                    <div className="scheme-desc">
-                      直接调用系统底层打印器，可选择<strong>“另存为 PDF”</strong>保存。字体完全采用手机原生渲染，文字绝对居中。
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary screenshot-generate-btn"
-                      disabled={
-                        (!includeHeader && !includeMessages && !includeAnalysis) ||
-                        (includeMessages && screenshotMessages.length === 0)
-                      }
-                      onClick={() => {
-                        window.print();
-                      }}
-                    >
-                      🖨️ 开启【方案 5：系统打印/存PDF】
-                    </button>
-                  </div>
-
-                  {/* 方案 6: 原生全屏长页面模式 */}
-                  <div className="screenshot-scheme-card">
-                    <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 6（适合支持长截屏的机型）</span>
-                    </div>
-                    <div className="scheme-title">全屏长页面模式（系统滚动截屏）</div>
-                    <div className="scheme-desc">
-                      展开为纯净长网页，供手机按下截屏键后，点击系统弹出的【滚动截屏】逐屏截取。
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary screenshot-generate-btn"
-                      disabled={
-                        (!includeHeader && !includeMessages && !includeAnalysis) ||
-                        (includeMessages && screenshotMessages.length === 0)
-                      }
-                      onClick={() => {
-                        setDetail(null);
-                        setIsScrollMode(true);
-                      }}
-                    >
-                      📱 进入【方案 6：全屏滚动截屏模式】
+                      {screenshotGenerating && screenshotEngine === "dom-4" ? <>⏳ 正在生成局部强校准长图...</> : <><Camera size={16} /> 生成【方案 6：局部上移 4px】</>}
                     </button>
                   </div>
                 </div>
