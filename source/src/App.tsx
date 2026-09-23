@@ -21,7 +21,10 @@ import {
   Smile,
   Check,
   Sparkles,
+  Camera,
+  Download,
 } from "lucide-react";
+import html2canvas from "html2canvas";
 import {
   parseChat,
   toMessages,
@@ -32,6 +35,7 @@ import {
 import {
   ACTIONS,
   RELATIONS,
+  STAGES,
   statusLabel,
   meanQuality,
   type Message,
@@ -271,6 +275,14 @@ export default function App() {
     [storageReady, setStorageReady] = useState(false),
     [detail, setDetail] = useState<string | null>(null),
     [notice, setNotice] = useState("");
+  const [screenshotRange, setScreenshotRange] = useState<"10" | "20" | "50" | "all">("20");
+  const [includeHeader, setIncludeHeader] = useState(true);
+  const [includeMessages, setIncludeMessages] = useState(true);
+  const [includeAnalysis, setIncludeAnalysis] = useState(true);
+  const [screenshotGenerating, setScreenshotGenerating] = useState(false);
+  const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
+  const [screenshotError, setScreenshotError] = useState<string | null>(null);
+  const screenshotContainerRef = useRef<HTMLDivElement>(null);
   const [overlap, setOverlap] = useState<Message[] | null>(null),
     [scope, setScope] = useState<Message[] | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
@@ -420,6 +432,39 @@ export default function App() {
         : selfCount > otherCount
           ? "我方更主动"
           : "对方更主动";
+
+  const screenshotMessages = (() => {
+    if (screenshotRange === "10") return messages.slice(-10);
+    if (screenshotRange === "20") return messages.slice(-20);
+    if (screenshotRange === "50") return messages.slice(-50);
+    return messages;
+  })();
+
+  async function handleGenerateScreenshot() {
+    if (!screenshotContainerRef.current) return;
+    setScreenshotGenerating(true);
+    setScreenshotError(null);
+    try {
+      if (document.fonts) {
+        await document.fonts.ready;
+      }
+      await new Promise((r) => setTimeout(r, 80));
+      const canvas = await html2canvas(screenshotContainerRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#ededed",
+        logging: false,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      setScreenshotDataUrl(dataUrl);
+    } catch (err: unknown) {
+      console.error("Screenshot error:", err);
+      setScreenshotError("长截图生成失败，请重试或减少截取条数");
+    } finally {
+      setScreenshotGenerating(false);
+    }
+  }
   let selfStreak = 0;
   for (
     let i = messages.length - 1;
@@ -1249,6 +1294,8 @@ export default function App() {
                 ? "语气工具箱"
                 : detail === "tools"
                   ? "聊天工具箱"
+              : detail === "screenshot"
+                ? (screenshotDataUrl ? "长截图预览" : "生成长截图")
               : detail === "sparks"
                 ? "对话彩蛋"
                 : detail === "action"
@@ -1259,7 +1306,11 @@ export default function App() {
                       ? "情绪与意图"
                       : "回复评价"
           }
-          close={() => setDetail(null)}
+          close={() => {
+            setDetail(null);
+            setScreenshotDataUrl(null);
+            setScreenshotError(null);
+          }}
         >
           {detail === "tones" ? (
             <>
@@ -1316,6 +1367,18 @@ export default function App() {
                   <strong>重新分析</strong>
                   <span>用当前设置刷新结果</span>
                 </button>
+                <button
+                  className="tool-action-featured"
+                  disabled={!messages.length}
+                  onClick={() => {
+                    setScreenshotDataUrl(null);
+                    setScreenshotError(null);
+                    setDetail("screenshot");
+                  }}
+                >
+                  <strong>📸 生成长截图</strong>
+                  <span>自选范围导出聊天与分析档案</span>
+                </button>
               </div>
               {charms.length > 0 && (
                 <button
@@ -1329,6 +1392,128 @@ export default function App() {
                 </button>
               )}
             </>
+          ) : detail === "screenshot" ? (
+            screenshotDataUrl ? (
+              <div className="screenshot-preview-pane">
+                <div className="screenshot-tip">
+                  <Sparkles size={15} /> 提示：在手机上<strong>长按下方长图</strong>即可直接【保存到相册】或发送给好友。
+                </div>
+                <div className="screenshot-img-container">
+                  <img
+                    src={screenshotDataUrl}
+                    alt="聊天与分析长截图"
+                    className="screenshot-preview-img"
+                  />
+                </div>
+                <div className="screenshot-preview-actions">
+                  <a
+                    href={screenshotDataUrl}
+                    download={`crush-chat-${other || "record"}-${new Date().toISOString().slice(0, 10)}.png`}
+                    className="primary screenshot-download-btn"
+                  >
+                    <Download size={16} /> 保存长图到本地相册
+                  </a>
+                  <button
+                    className="secondary"
+                    onClick={() => setScreenshotDataUrl(null)}
+                  >
+                    🔄 重新调整范围与设置
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="screenshot-config-pane">
+                <div className="screenshot-config-section">
+                  <label className="screenshot-label">
+                    截取消息范围
+                    <span className="screenshot-sub-label">
+                      （总计 {messages.length} 条，当前选中 {screenshotMessages.length} 条）
+                    </span>
+                  </label>
+                  <div className="screenshot-chips">
+                    {[
+                      { id: "10", label: "最近 10 条" },
+                      { id: "20", label: "最近 20 条 (推荐)" },
+                      { id: "50", label: "最近 50 条" },
+                      { id: "all", label: `全部 (${messages.length}条)` },
+                    ].map((chip) => (
+                      <button
+                        key={chip.id}
+                        type="button"
+                        className={`screenshot-chip ${screenshotRange === chip.id ? "active" : ""}`}
+                        onClick={() => setScreenshotRange(chip.id as any)}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="screenshot-config-section">
+                  <label className="screenshot-label">包含内容板块</label>
+                  <div className="screenshot-checkbox-group">
+                    <label className="screenshot-checkbox-item">
+                      <input
+                        type="checkbox"
+                        checked={includeHeader}
+                        onChange={(e) => setIncludeHeader(e.target.checked)}
+                      />
+                      <div>
+                        <strong>顶部状态档案</strong>
+                        <span>双方昵称、关系状态、心动指数与发挥评分</span>
+                      </div>
+                    </label>
+                    <label className="screenshot-checkbox-item">
+                      <input
+                        type="checkbox"
+                        checked={includeMessages}
+                        onChange={(e) => setIncludeMessages(e.target.checked)}
+                      />
+                      <div>
+                        <strong>聊天气泡记录</strong>
+                        <span>真实微信对话气泡排布（已选 {screenshotMessages.length} 条）</span>
+                      </div>
+                    </label>
+                    <label className="screenshot-checkbox-item">
+                      <input
+                        type="checkbox"
+                        checked={includeAnalysis}
+                        onChange={(e) => setIncludeAnalysis(e.target.checked)}
+                      />
+                      <div>
+                        <strong>底部分析报告</strong>
+                        <span>当前关系阶段诊断、潜台词解读与下一步策略</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                {screenshotError && (
+                  <div className="screenshot-error-box" role="alert">
+                    {screenshotError}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  className="primary screenshot-generate-btn"
+                  disabled={
+                    screenshotGenerating ||
+                    (!includeHeader && !includeMessages && !includeAnalysis) ||
+                    (includeMessages && screenshotMessages.length === 0)
+                  }
+                  onClick={handleGenerateScreenshot}
+                >
+                  {screenshotGenerating ? (
+                    <>⏳ 正在高清合成长图中...</>
+                  ) : (
+                    <>
+                      <Camera size={16} /> 立即生成高清长截图
+                    </>
+                  )}
+                </button>
+              </div>
+            )
           ) : detail === "sparks" ? (
             <>
               <p>这些是完全在浏览器本地发现的小细节，不会额外消耗分析次数。</p>
@@ -1541,6 +1726,134 @@ export default function App() {
           </button>
         </Modal>
       )}
+      {/* 隐藏的离屏渲染节点，供 html2canvas 生成高清长截图 */}
+      <div
+        ref={screenshotContainerRef}
+        className="screenshot-render-target"
+        aria-hidden="true"
+      >
+        {includeHeader && (
+          <div className="ssr-header-card">
+            <div className="ssr-top-row">
+              <span className="ssr-logo">💚 Crush 聊天记录监视器</span>
+              <span className="ssr-badge">
+                {imperialMode ? "御前模式 · " : ""}
+                {RELATIONS[relation]}
+              </span>
+            </div>
+            <div className="ssr-contact-row">
+              <h3>与【{other}】的对话档案</h3>
+              <p>
+                生成时间：{new Date().toLocaleDateString("zh-CN")}{" "}
+                {new Date().toLocaleTimeString("zh-CN", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </p>
+            </div>
+            <div className="ssr-stats-grid">
+              <div className="ssr-stat-item">
+                <small>心动指数</small>
+                <strong>{value ?? "—"}{value != null ? "%" : ""}</strong>
+              </div>
+              <div className="ssr-stat-item">
+                <small>我的发挥</small>
+                <strong>{replyRating(quality)?.label ?? "—"}</strong>
+              </div>
+              <div className="ssr-stat-item">
+                <small>互动节奏</small>
+                <strong>{turns}次接话</strong>
+              </div>
+              <div className="ssr-stat-item">
+                <small>发言比例</small>
+                <strong>
+                  {selfCount}:{otherCount}
+                </strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {includeMessages && (
+          <div className="ssr-messages-wrap">
+            <div className="ssr-messages-title">
+              <span>💬 聊天记录片段（共 {screenshotMessages.length} 条）</span>
+            </div>
+            <div className="ssr-messages-list">
+              {screenshotMessages.map((m) => {
+                const isOther = m.sender === "other";
+                const lineResult = a.lines[m.id];
+                return (
+                  <div
+                    key={m.id}
+                    className={`ssr-msg-row ${isOther ? "other" : "self"}`}
+                  >
+                    {m.timestamp && (
+                      <div className="ssr-msg-time">{m.timestamp}</div>
+                    )}
+                    <div className="ssr-msg-content">
+                      {isOther && (
+                        <div className="ssr-avatar other-avatar">
+                          {other.slice(0, 1)}
+                        </div>
+                      )}
+                      <div className="ssr-bubble-group">
+                        {isOther && (
+                          <span className="ssr-speaker-name">{other}</span>
+                        )}
+                        <div
+                          className={`ssr-bubble ${isOther ? "bubble-other" : "bubble-self"}`}
+                        >
+                          {m.text}
+                        </div>
+                        {isOther && lineResult?.score?.value != null && (
+                          <span className="ssr-mini-score">
+                            好感度 {lineResult.score.value}
+                          </span>
+                        )}
+                      </div>
+                      {!isOther && (
+                        <div className="ssr-avatar self-avatar">
+                          {self === "我" ? "我" : self.slice(0, 1)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {includeAnalysis && ov && (
+          <div className="ssr-analysis-card">
+            <div className="ssr-analysis-title">
+              <Sparkles size={16} /> 深度关系与意图诊断报告
+            </div>
+            <div className="ssr-analysis-body">
+              <div className="ssr-analysis-row">
+                <span className="ssr-analysis-label">当前关系阶段：</span>
+                <strong className="ssr-analysis-val">
+                  {STAGES[ov.stage] ?? "观察中"}
+                </strong>
+              </div>
+              <div className="ssr-analysis-row">
+                <span className="ssr-analysis-label">建议下一步策略：</span>
+                <strong className="ssr-analysis-val highlight">
+                  {ACTIONS[ov.action]?.label ?? "顺着聊"}
+                </strong>
+              </div>
+              <div className="ssr-analysis-desc">
+                {ACTIONS[ov.action]?.detail}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="ssr-footer">
+          <span>Crush 聊天记录监视器 · 情感分析与心动诊断 · 仅供参考</span>
+        </div>
+      </div>
     </main>
   );
 }
