@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v1.2.0-baseline-calibrated";
+const SCREENSHOT_VERSION = "v1.3.0-canvas-offset-hardfixed";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -449,11 +449,37 @@ export default function App() {
     if (!screenshotContainerRef.current) return;
     setScreenshotGenerating(true);
     setScreenshotError(null);
+
+    // 核心拦截器：无论安卓机型自带何种字体引擎或 offsetTop + 2 采样偏差，
+    // 在 Canvas 底层 fillText 绘制中文与文本时，强制向上修正 Y 坐标偏移（2.5px），
+    // 从而使所有气泡文字、头像文字、胶囊标签文字绝对居中对齐，杜绝下沉！
+    const origGetContext = HTMLCanvasElement.prototype.getContext;
+    const hookedCanvases = new WeakSet<object>();
+
     try {
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
+        const type = args[0];
+        const ctx: any = origGetContext.apply(this, args as any);
+        if (type === "2d" && ctx && !hookedCanvases.has(this)) {
+          hookedCanvases.add(this);
+          const origFillText = ctx.fillText;
+          ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
+            const offsetY = 2.5;
+            if (typeof maxWidth === "number") {
+              origFillText.call(this, textStr, x, y - offsetY, maxWidth);
+            } else {
+              origFillText.call(this, textStr, x, y - offsetY);
+            }
+          };
+        }
+        return ctx;
+      } as any;
+
       if (document.fonts) {
         await document.fonts.ready;
       }
       await new Promise((r) => setTimeout(r, 80));
+
       const targetEl = screenshotContainerRef.current;
       const renderWidth = targetEl.offsetWidth || 414;
       const renderHeight = targetEl.scrollHeight || targetEl.offsetHeight;
@@ -484,6 +510,32 @@ export default function App() {
             clonedDoc.body.style.padding = "0";
             clonedDoc.body.style.backgroundColor = "#ededed";
           }
+
+          // 2. 同时劫持克隆文档 iframe 内的 Canvas context，保证双重覆盖
+          try {
+            const win: any = clonedDoc.defaultView;
+            if (win && win.HTMLCanvasElement && win.HTMLCanvasElement.prototype) {
+              const cloneOrigGetContext = win.HTMLCanvasElement.prototype.getContext;
+              win.HTMLCanvasElement.prototype.getContext = function (this: any, ...args: any[]) {
+                const type = args[0];
+                const ctx: any = cloneOrigGetContext.apply(this, args);
+                if (type === "2d" && ctx && !hookedCanvases.has(this)) {
+                  hookedCanvases.add(this);
+                  const origFill = ctx.fillText;
+                  ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
+                    const offsetY = 2.5;
+                    if (typeof maxWidth === "number") {
+                      origFill.call(this, textStr, x, y - offsetY, maxWidth);
+                    } else {
+                      origFill.call(this, textStr, x, y - offsetY);
+                    }
+                  };
+                }
+                return ctx;
+              };
+            }
+          } catch (_) {}
+
           const el = clonedDoc.querySelector(".screenshot-render-target") as HTMLElement | null;
           if (el) {
             // 确保在克隆文档中处于确定物理流布局，清除负坐标
@@ -495,43 +547,22 @@ export default function App() {
             el.style.width = "414px";
             el.style.minWidth = "414px";
             el.style.maxWidth = "414px";
-
-            // 彻底解决 html2canvas 内部 FontMetrics 采样导致的中文文字下沉基线偏移：
-            // 针对气泡、头像、意图/情绪标签、评级胶囊，在克隆树中做统一轻微上移与行盒固化
-            const avatars = el.querySelectorAll<HTMLElement>(".avatar");
-            avatars.forEach((av) => {
-              av.style.display = "flex";
-              av.style.alignItems = "center";
-              av.style.justifyContent = "center";
-              av.style.lineHeight = "1";
-              av.style.paddingBottom = "3px"; // 抵消安卓字体基准下沉
-            });
-
-            const tags = el.querySelectorAll<HTMLElement>(".emotion-tag, .intent-tag, .reply-tag");
-            tags.forEach((tag) => {
-              tag.style.display = "inline-flex";
-              tag.style.alignItems = "center";
-              tag.style.justifyContent = "center";
-              tag.style.paddingBottom = "2px"; // 抵消胶囊标签内文字下沉
-            });
-
-            const bubbles = el.querySelectorAll<HTMLElement>(".bubble");
-            bubbles.forEach((b) => {
-              b.style.paddingTop = "7px";
-              b.style.paddingBottom = "9px";
-            });
           }
         },
       });
+
       const dataUrl = canvas.toDataURL("image/png");
       setScreenshotDataUrl(dataUrl);
     } catch (err: unknown) {
       console.error("Screenshot error:", err);
       setScreenshotError("长截图生成失败，请重试或减少截取条数");
     } finally {
+      // 截图完成后立即恢复原生 getContext，零污染全局其他业务与主项目
+      HTMLCanvasElement.prototype.getContext = origGetContext;
       setScreenshotGenerating(false);
     }
   }
+
   let selfStreak = 0;
   for (
     let i = messages.length - 1;
