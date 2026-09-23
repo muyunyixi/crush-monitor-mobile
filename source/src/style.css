@@ -2697,3 +2697,417 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 .screenshot-tip-wechat strong {
   color: #5c3c05;
 }
+
+/* 手机滑动长截屏纯净全屏模式 (Scroll Capture Mode) */
+.scroll-capture-screen {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  background: #ededed;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+.scroll-capture-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10000;
+  background: rgba(33, 44, 53, 0.95);
+  backdrop-filter: blur(10px);
+  color: #fff;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.scroll-capture-back {
+  background: #07c160;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.scroll-capture-tip {
+  font-size: 12px;
+  color: #e2f5e9;
+  line-height: 1.4;
+  text-align: right;
+  flex: 1;
+}
+
+.scroll-capture-content {
+  max-width: 500px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: #ededed;
+  padding-bottom: 50px;
+  box-sizing: border-box;
+}
+
+/* 在原生滑动截屏容器中复用精美的微信风格消息排版 */
+.scroll-capture-content .ssr-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 52px;
+  padding: 0 12px;
+  background: #ededed;
+  border-bottom: 1px solid #d8d8d8;
+  box-sizing: border-box;
+}
+
+.scroll-capture-content .ssr-head-back,
+.scroll-capture-content .ssr-head-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: #161616;
+}
+
+.scroll-capture-content .ssr-head-title {
+  text-align: center;
+}
+
+.scroll-capture-content .ssr-head-title h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #181818;
+  line-height: 1.25;
+}
+
+.scroll-capture-content .ssr-head-title span {
+  display: block;
+  font-size: 10px;
+  color: #8b8b8b;
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
+.scroll-capture-content .ssr-header-card {
+  margin: 12px 11px 8px;
+  padding: 13px 14px;
+  background: #ffffff;
+  border-radius: 9px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+}
+
+.scroll-capture-content .ssr-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 7px;
+}
+
+.scroll-capture-content .ssr-logo {
+  font-size: 12px;
+  font-weight: 700;
+  color: #274c36;
+}
+
+.scroll-capture-content .ssr-badge {
+  font-size: 10px;
+  color: #2b7a4c;
+  background: #eaf6ee;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.scroll-capture-content .ssr-contact-row h3 {
+  margin: 0 0 3px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.scroll-capture-content .ssr-contact-row p {
+  margin: 0;
+  font-size: 10px;
+  color: #888888;
+}
+
+.scroll-capture-content .ssr-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+.scroll-capture-content .ssr-stat-item small {
+  display: block;
+  font-size: 10px;
+  color: #888888;
+  margin-bottom: 2px;
+}
+
+.scroll-capture-content .ssr-stat-item strong {
+  font-size: 14px;
+  font-weight: 700;
+  color: #202b33;
+}
+
+.scroll-capture-content .ssr-messages-wrap {
+  margin: 10px 0;
+}
+
+.scroll-capture-content .ssr-messages-title {
+  text-align: center;
+  margin: 12px 0;
+}
+
+.scroll-capture-content .ssr-messages-title span {
+  display: inline-block;
+  background: #dedede;
+  color: #707070;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.scroll-capture-content .ssr-messages-list {
+  padding: 0 12px;
+}
+
+.scroll-capture-content .message {
+  margin-bottom: 16px;
+  min-width: 0;
+}
+
+.scroll-capture-content .timestamp {
+  text-align: center;
+  color: #a0a0a0;
+  font-size: 11px;
+  line-height: 1.2;
+  margin-bottom: 12px;
+}
+
+.scroll-capture-content .message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+}
+
+.scroll-capture-content .message.self .message-row {
+  flex-direction: row-reverse;
+}
+
+.scroll-capture-content .avatar {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 4px;
+  font-size: 15px;
+  line-height: 36px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  background: linear-gradient(145deg, #bdcbd7, #d6e0e7);
+  color: #41586a;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+}
+
+.scroll-capture-content .avatar.mine {
+  background: linear-gradient(145deg, #222b31, #4d5a60);
+  color: #f3cf83;
+}
+
+.scroll-capture-content .message-content {
+  min-width: 0;
+  max-width: calc(100% - 70px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.scroll-capture-content .message.self .message-content {
+  align-items: flex-end;
+}
+
+.scroll-capture-content .bubble {
+  padding: 8px 11px;
+  border-radius: 4px;
+  font-size: 15px;
+  line-height: 1.45;
+  color: #181818;
+  position: relative;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  width: fit-content;
+  max-width: 100%;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.scroll-capture-content .bubble:before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+.scroll-capture-content .message.self .bubble {
+  background: #95ec69;
+}
+
+.scroll-capture-content .message.self .bubble:before {
+  left: auto;
+  right: -4px;
+}
+
+.scroll-capture-content .message-tags {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.scroll-capture-content .message-tags.self {
+  align-items: flex-end;
+}
+
+.scroll-capture-content .analysis-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scroll-capture-content .analysis-row-label {
+  color: #8c9392;
+  font-size: 10px;
+  line-height: 18px;
+  margin-right: 2px;
+}
+
+.scroll-capture-content .emotion-tag,
+.scroll-capture-content .intent-tag,
+.scroll-capture-content .reply-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 18px;
+  height: 19px;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.scroll-capture-content .emotion-tag span,
+.scroll-capture-content .emotion-tag b {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 0 5px;
+  line-height: 18px;
+}
+
+.scroll-capture-content .intent-tag {
+  padding: 0 6px;
+  gap: 3px;
+  background: #eef2f5;
+  color: #4a5c68;
+}
+
+.scroll-capture-content .reply-tag {
+  padding: 0 7px;
+  gap: 2px;
+  background: #edf6f0;
+  color: #2b7a4c;
+}
+
+.scroll-capture-content .ssr-analysis-card {
+  margin: 12px 11px 8px;
+  padding: 13px 14px;
+  background: #ffffff;
+  border-radius: 9px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+}
+
+.scroll-capture-content .ssr-analysis-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #274c36;
+  margin-bottom: 9px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.scroll-capture-content .ssr-analysis-body {
+  font-size: 12px;
+}
+
+.scroll-capture-content .ssr-analysis-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.scroll-capture-content .ssr-analysis-label {
+  color: #888888;
+  margin-right: 6px;
+}
+
+.scroll-capture-content .ssr-analysis-val {
+  font-weight: 600;
+  color: #1e1e1e;
+}
+
+.scroll-capture-content .ssr-analysis-val.highlight {
+  color: #07c160;
+}
+
+.scroll-capture-content .ssr-analysis-desc {
+  font-size: 11px;
+  color: #666666;
+  line-height: 1.5;
+  background: #f7f9fa;
+  padding: 7px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+}
+
+.scroll-capture-content .ssr-footer {
+  text-align: center;
+  padding: 16px 12px 24px;
+  color: #999999;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}

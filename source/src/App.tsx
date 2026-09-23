@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v1.3.0-canvas-offset-hardfixed";
+const SCREENSHOT_VERSION = "v1.4.0-scroll-mode-ready";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -282,6 +282,7 @@ export default function App() {
   const [includeAnalysis, setIncludeAnalysis] = useState(true);
   const [screenshotGenerating, setScreenshotGenerating] = useState(false);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
+  const [isScrollMode, setIsScrollMode] = useState(false);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const screenshotContainerRef = useRef<HTMLDivElement>(null);
   const [overlap, setOverlap] = useState<Message[] | null>(null),
@@ -768,6 +769,210 @@ export default function App() {
   const names = [...new Set(parsed.map((x) => x.speaker))];
   const chosen = messages.find((m) => m.id === detail),
     result = detail ? a.lines[detail] : undefined;
+  if (isScrollMode) {
+    return (
+      <div className="scroll-capture-screen">
+        <div className="scroll-capture-bar">
+          <button
+            type="button"
+            className="scroll-capture-back"
+            onClick={() => setIsScrollMode(false)}
+          >
+            ← 退出长截屏模式
+          </button>
+          <div className="scroll-capture-tip">
+            💡 手机按电源+音量键截屏，点击屏幕弹出的<strong>【长截屏】/【滚动截屏】</strong>即可截取整页！
+          </div>
+        </div>
+        <div className="scroll-capture-content">
+          {/* 顶部真实微信风格导航栏 */}
+          <header className="ssr-chat-head">
+            <div className="ssr-head-back">
+              <ArrowLeft size={28} strokeWidth={1.8} />
+            </div>
+            <div className="ssr-head-title">
+              <h2>{other || "微信好友"}</h2>
+              <span>
+                {imperialMode ? "御前模式 · " : ""}
+                {RELATIONS[relation]}
+              </span>
+            </div>
+            <div className="ssr-head-more">
+              <MoreHorizontal size={26} strokeWidth={2} />
+            </div>
+          </header>
+
+          {/* 顶部关系与互动档案卡片 */}
+          {includeHeader && (
+            <div className="ssr-header-card">
+              <div className="ssr-top-row">
+                <span className="ssr-logo">💚 Crush 聊天记录监视器</span>
+                <span className="ssr-badge">
+                  {imperialMode ? "御前模式 · " : ""}
+                  {RELATIONS[relation]}
+                </span>
+              </div>
+              <div className="ssr-contact-row">
+                <h3>与【{other}】的对话档案</h3>
+                <p>
+                  生成时间：{new Date().toLocaleDateString("zh-CN")}{" "}
+                  {new Date().toLocaleTimeString("zh-CN", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </p>
+              </div>
+              <div className="ssr-stats-grid">
+                <div className="ssr-stat-item">
+                  <small>心动指数</small>
+                  <strong>{value ?? "—"}{value != null ? "%" : ""}</strong>
+                </div>
+                <div className="ssr-stat-item">
+                  <small>我的发挥</small>
+                  <strong>{replyRating(quality)?.label ?? "—"}</strong>
+                </div>
+                <div className="ssr-stat-item">
+                  <small>互动节奏</small>
+                  <strong>{turns}次接话</strong>
+                </div>
+                <div className="ssr-stat-item">
+                  <small>发言比例</small>
+                  <strong>
+                    {selfCount}:{otherCount}
+                  </strong>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 核心消息流：原生 DOM 呈现，100% 完美字体排版与居中 */}
+          {includeMessages && (
+            <div className="ssr-messages-wrap">
+              <div className="ssr-messages-title">
+                <span>💬 聊天记录片段（共 {screenshotMessages.length} 条）</span>
+              </div>
+              <div className="ssr-messages-list">
+                {screenshotMessages.map((m, i) => {
+                  const isOther = m.sender === "other";
+                  const lineResult = a.lines[m.id];
+                  const showTimestamp =
+                    (i === 0 || m.timestamp !== screenshotMessages[i - 1]?.timestamp) &&
+                    Boolean(m.timestamp);
+                  return (
+                    <div
+                      key={m.id}
+                      className={`message ${m.sender}`}
+                    >
+                      {showTimestamp && (
+                        <div className="timestamp">
+                          {m.timestamp ? m.timestamp.replace(/^\d{4}年/, "") : ""}
+                        </div>
+                      )}
+                      <div className="message-row">
+                        <div
+                          className={`avatar ${m.sender === "self" ? "mine" : ""}`}
+                        >
+                          {(m.sender === "self" ? self : other).slice(0, 1)}
+                        </div>
+                        <div className="message-content">
+                          <div className="bubble">{m.text}</div>
+                          {m.kind === "text" && (
+                            <div className={`message-tags ${m.sender}`}>
+                              {isOther ? (
+                                <>
+                                  {lineResult?.emotions && (
+                                    <div className="analysis-row emotion-row">
+                                      <span className="analysis-row-label">
+                                        情绪
+                                      </span>
+                                      {topEmotions(lineResult.emotions).map(
+                                        (emotion) => (
+                                          <span
+                                            key={emotion.key}
+                                            className={`emotion-tag emotion-${emotion.key}`}
+                                          >
+                                            <span>{emotion.label}</span>
+                                            <b>{emotion.percent}</b>
+                                          </span>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                  {lineResult?.intents && (
+                                    <div className="analysis-row intent-row">
+                                      <span className="analysis-row-label">
+                                        意图
+                                      </span>
+                                      {topIntents(lineResult.intents).map(
+                                        (intent) => (
+                                          <span
+                                            key={intent.key}
+                                            className="intent-tag"
+                                          >
+                                            <span>{intent.label}</span>
+                                            <b>{intent.percent}</b>
+                                          </span>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
+                                </>
+                              ) : lineResult ? (
+                                <div className="analysis-row">
+                                  <span className="reply-tag">
+                                    <span>回复评级：</span>
+                                    <b>
+                                      {replyRating(lineResult.score.value)?.label ??
+                                        "待判断"}
+                                    </b>
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 底部深度分析报告卡片 */}
+          {includeAnalysis && ov && (
+            <div className="ssr-analysis-card">
+              <div className="ssr-analysis-title">
+                <Sparkles size={16} /> 深度关系与意图诊断报告
+              </div>
+              <div className="ssr-analysis-body">
+                <div className="ssr-analysis-row">
+                  <span className="ssr-analysis-label">当前关系阶段：</span>
+                  <strong className="ssr-analysis-val">
+                    {STAGES[ov.stage] ?? "观察中"}
+                  </strong>
+                </div>
+                <div className="ssr-analysis-row">
+                  <span className="ssr-analysis-label">建议下一步策略：</span>
+                  <strong className="ssr-analysis-val highlight">
+                    {ACTIONS[ov.action]?.label ?? "顺着聊"}
+                  </strong>
+                </div>
+                <div className="ssr-analysis-desc">
+                  {ACTIONS[ov.action]?.detail}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="ssr-footer">
+            <span>Crush 聊天记录监视器 · 情感分析与心动诊断 · 仅供参考</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <main className="app">
       <div className="workspace">
@@ -1613,6 +1818,24 @@ export default function App() {
                 <button
                   type="button"
                   className="primary screenshot-generate-btn"
+                  style={{ background: "#07c160", border: "none", color: "#fff", fontWeight: "bold" }}
+                  disabled={
+                    (!includeHeader && !includeMessages && !includeAnalysis) ||
+                    (includeMessages && screenshotMessages.length === 0)
+                  }
+                  onClick={() => {
+                    setDetail(null);
+                    setIsScrollMode(true);
+                  }}
+                >
+                  📱 开启全屏纯净模式（支持手机系统长截屏/滚动截屏）
+                </button>
+                <div style={{ textAlign: "center", margin: "6px 0", fontSize: "11px", color: "#888" }}>
+                  或者使用浏览器 Canvas 合成下载：
+                </div>
+                <button
+                  type="button"
+                  className="secondary screenshot-generate-btn"
                   disabled={
                     screenshotGenerating ||
                     (!includeHeader && !includeMessages && !includeAnalysis) ||
@@ -1624,7 +1847,7 @@ export default function App() {
                     <>⏳ 正在高清合成长图中...</>
                   ) : (
                     <>
-                      <Camera size={16} /> 立即生成高清长截图
+                      <Camera size={16} /> 生成普通长图文件并保存
                     </>
                   )}
                 </button>
