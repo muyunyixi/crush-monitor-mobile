@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.5.2-peach-guide";
+const SCREENSHOT_VERSION = "v2.5.3-manual-tag-styles";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -487,13 +487,17 @@ export default function App() {
       return output.length ? output : [""];
     };
 
+    type ManualTag =
+      | { kind: "emotion"; items: ReturnType<typeof topEmotions> }
+      | { kind: "intent"; items: ReturnType<typeof topIntents> }
+      | { kind: "reply"; rating: string };
     type ManualRow = {
       message: Message;
       y: number;
       lines: string[];
       bubbleWidth: number;
       bubbleHeight: number;
-      tags: string[];
+      tags: ManualTag[];
       timestamp?: string;
     };
     const rows: ManualRow[] = [];
@@ -513,21 +517,21 @@ export default function App() {
       const bubbleWidth = Math.min(278, Math.max(36, Math.ceil(widest) + 22));
       const bubbleHeight = Math.max(36, lines.length * 22 + 12);
       const result = a.lines[message.id];
-      const tags: string[] = [];
+      const tags: ManualTag[] = [];
       if (message.kind === "text" && result) {
         if (message.sender === "other") {
           if (result.emotions) {
-            tags.push(`情绪  ${topEmotions(result.emotions).map((item) => `${item.label} ${item.percent}`).join("  ")}`);
+            tags.push({ kind: "emotion", items: topEmotions(result.emotions) });
           }
           if (result.intents) {
-            tags.push(`意图  ${topIntents(result.intents).map((item) => `${item.label} ${item.percent}`).join("  ")}`);
+            tags.push({ kind: "intent", items: topIntents(result.intents) });
           }
         } else {
-          tags.push(`回复评级：${replyRating(result.score.value)?.label ?? "待判断"}`);
+          tags.push({ kind: "reply", rating: replyRating(result.score.value)?.label ?? "待判断" });
         }
       }
       rows.push({ message, y, lines, bubbleWidth, bubbleHeight, tags, timestamp });
-      y += Math.max(36, bubbleHeight) + (tags.length ? tags.length * 18 + 5 : 0) + 16;
+      y += Math.max(36, bubbleHeight) + (tags.length ? tags.length * 23 + 5 : 0) + 16;
     }
     if (includeAnalysis && ov) y += 132;
     y += 24;
@@ -559,6 +563,82 @@ export default function App() {
       ctx.textBaseline = "alphabetic";
       ctx.fillText(text, x, centerY + (ascent - descent) / 2);
     };
+    const emotionColors: Record<string, { ink: string; fill: string; line: string }> = {
+      happy: { ink: "#35765a", fill: "#e3f1e8", line: "#c7dfd0" },
+      caring: { ink: "#a36729", fill: "#fff0dc", line: "#ecd7ba" },
+      teasing: { ink: "#997127", fill: "#faf0d8", line: "#e8dbb7" },
+      surprised: { ink: "#91751f", fill: "#f9f3d5", line: "#e5dcae" },
+      shy: { ink: "#a16381", fill: "#f8e7ef", line: "#e9cedb" },
+      confused: { ink: "#76639a", fill: "#ede8f6", line: "#d9d0e9" },
+      calm: { ink: "#637986", fill: "#e7eef1", line: "#cedce2" },
+      angry: { ink: "#b24d4d", fill: "#fbe5e4", line: "#edc7c5" },
+      sad: { ink: "#a56b75", fill: "#f5e7ea", line: "#e6cdd3" },
+      disappointed: { ink: "#9a6970", fill: "#f1e5e7", line: "#dfcacf" },
+      annoyed: { ink: "#a8674e", fill: "#f8e9e1", line: "#e8cfc2" },
+      unknown: { ink: "#747a79", fill: "#eaeceb", line: "#d8dcda" },
+    };
+    const drawTagRow = (tag: ManualTag, startX: number, top: number, alignRight: boolean) => {
+      ctx.font = `10px ${fontFamily}`;
+      if (tag.kind === "reply") {
+        const text = `回复评级：${tag.rating}`;
+        const w = Math.ceil(ctx.measureText(text).width) + 14;
+        const x = alignRight ? startX - w : startX;
+        roundedRect(x, top, w, 19, 4);
+        ctx.fillStyle = "#efedf5";
+        ctx.fill();
+        ctx.strokeStyle = "#ddd7e8";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#65517f";
+        ctx.font = `600 10px ${fontFamily}`;
+        centeredText(text, x + w / 2, top + 9.5);
+        return;
+      }
+
+      const rowLabel = tag.kind === "emotion" ? "情绪" : "意图";
+      ctx.font = `10px ${fontFamily}`;
+      let totalWidth = 28;
+      const widths = tag.items.map((item) => {
+        const labelWidth = Math.ceil(ctx.measureText(item.label).width) + 10;
+        const percentWidth = Math.ceil(ctx.measureText(item.percent).width) + 10;
+        const width = labelWidth + percentWidth;
+        totalWidth += width + 4;
+        return { labelWidth, percentWidth, width };
+      });
+      let x = alignRight ? startX - totalWidth : startX;
+      ctx.fillStyle = "#8c9392";
+      centeredText(rowLabel, x + 10, top + 9.5);
+      x += 28;
+      tag.items.forEach((item, index) => {
+        const dims = widths[index];
+        if (tag.kind === "emotion") {
+          const palette = emotionColors[item.key] ?? emotionColors.unknown;
+          roundedRect(x, top, dims.width, 19, 4);
+          ctx.fillStyle = palette.fill;
+          ctx.fill();
+          ctx.fillStyle = palette.ink;
+          centeredText(item.label, x + dims.labelWidth / 2, top + 9.5);
+          ctx.fillStyle = "rgba(255,255,255,.72)";
+          ctx.fillRect(x + dims.labelWidth, top, dims.percentWidth, 19);
+          ctx.strokeStyle = palette.line;
+          ctx.beginPath();
+          ctx.moveTo(x + dims.labelWidth, top + 2);
+          ctx.lineTo(x + dims.labelWidth, top + 17);
+          ctx.stroke();
+          ctx.fillStyle = palette.ink;
+          centeredText(item.percent, x + dims.labelWidth + dims.percentWidth / 2, top + 9.5);
+        } else {
+          roundedRect(x, top, dims.width, 19, 4);
+          ctx.fillStyle = "#e7edf4";
+          ctx.fill();
+          ctx.fillStyle = "#61738a";
+          centeredText(item.label, x + dims.labelWidth / 2, top + 9.5);
+          ctx.fillStyle = "#8492a2";
+          centeredText(item.percent, x + dims.labelWidth + dims.percentWidth / 2, top + 9.5);
+        }
+        x += dims.width + 4;
+      });
+    };
 
     ctx.fillStyle = "#ededed";
     ctx.fillRect(0, 0, width, 52);
@@ -583,6 +663,14 @@ export default function App() {
       ctx.font = `600 13px ${fontFamily}`;
       ctx.textAlign = "left";
       ctx.fillText("💚 Crush 聊天记录监视器", 25, contentTop + 23);
+      ctx.font = `600 10px ${fontFamily}`;
+      const relationText = RELATIONS[relation];
+      const relationWidth = Math.ceil(ctx.measureText(relationText).width) + 14;
+      roundedRect(389 - relationWidth, contentTop + 11, relationWidth, 20, 10);
+      ctx.fillStyle = "#eef7f1";
+      ctx.fill();
+      ctx.fillStyle = "#2b6e46";
+      centeredText(relationText, 389 - relationWidth / 2, contentTop + 21);
       ctx.fillStyle = "#181818";
       ctx.font = `600 15px ${fontFamily}`;
       ctx.fillText(`与【${other || "对方"}】的对话档案`, 25, contentTop + 49);
@@ -599,9 +687,15 @@ export default function App() {
       contentTop += 126;
     }
     if (includeMessages) {
+      const titleText = `💬 聊天记录片段（共 ${screenshotMessages.length} 条）`;
       ctx.fillStyle = "#777";
       ctx.font = `11px ${fontFamily}`;
-      centeredText(`💬 聊天记录片段（共 ${screenshotMessages.length} 条）`, width / 2, contentTop + 12);
+      const titleWidth = Math.ceil(ctx.measureText(titleText).width) + 18;
+      roundedRect((width - titleWidth) / 2, contentTop + 2, titleWidth, 21, 11);
+      ctx.fillStyle = "#dedede";
+      ctx.fill();
+      ctx.fillStyle = "#737373";
+      centeredText(titleText, width / 2, contentTop + 12.5);
     }
 
     for (const row of rows) {
@@ -639,11 +733,13 @@ export default function App() {
       row.lines.forEach((line, lineIndex) => {
         centeredText(line, bubbleX + 11, firstCenter + lineIndex * 22, "left");
       });
-      ctx.fillStyle = "#7f8786";
-      ctx.font = `10px ${fontFamily}`;
       row.tags.forEach((tag, tagIndex) => {
-        ctx.textAlign = selfMessage ? "right" : "left";
-        ctx.fillText(tag, selfMessage ? bubbleX + row.bubbleWidth : bubbleX, rowTop + row.bubbleHeight + 17 + tagIndex * 18);
+        drawTagRow(
+          tag,
+          selfMessage ? bubbleX + row.bubbleWidth : bubbleX,
+          rowTop + row.bubbleHeight + 5 + tagIndex * 23,
+          selfMessage,
+        );
       });
     }
 
