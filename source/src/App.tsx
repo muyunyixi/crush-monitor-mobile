@@ -453,12 +453,23 @@ export default function App() {
         await document.fonts.ready;
       }
       await new Promise((r) => setTimeout(r, 80));
-      const canvas = await html2canvas(screenshotContainerRef.current, {
+      const targetEl = screenshotContainerRef.current;
+      const canvas = await html2canvas(targetEl, {
         scale: 2,
         useCORS: true,
         allowTaint: false,
         backgroundColor: "#ededed",
         logging: false,
+        onclone: (clonedDoc) => {
+          const el = clonedDoc.querySelector(".screenshot-render-target") as HTMLElement | null;
+          if (el) {
+            // 确保在克隆的 DOM 中保持绝对固定坐标与标准尺寸渲染，不受外部滚动与字体影响
+            el.style.position = "relative";
+            el.style.left = "0";
+            el.style.top = "0";
+            el.style.transform = "none";
+          }
+        },
       });
       const dataUrl = canvas.toDataURL("image/png");
       setScreenshotDataUrl(dataUrl);
