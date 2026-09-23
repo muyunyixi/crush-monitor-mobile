@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.5.0-measured-canvas";
+const SCREENSHOT_VERSION = "v2.5.1-calibration-pair";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -288,7 +288,8 @@ export default function App() {
     | "measured-canvas"
     | "layout-lock"
     | "canvas-3"
-    | "dom-2";
+    | "dom-2-5"
+    | "dom-4";
   const [screenshotEngine, setScreenshotEngine] = useState<ScreenshotEngine>("native");
   const [screenshotModeType, setScreenshotModeType] = useState<"card" | "chat">("card");
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
@@ -769,8 +770,8 @@ export default function App() {
             // vivo/部分 Android WebView 的 Canvas 中文字体 metrics 会把字形画低。
             // DOM 校准方案不碰 Canvas API，而是在 html2canvas 的隔离副本中，仅上移
             // 气泡、头像与分析徽章内的文字碎片；背景、边框和正常页面完全不动。
-            if (mode === "dom-2") {
-              const offset = 2;
+            if (mode === "dom-2-5" || mode === "dom-4") {
+              const offset = mode === "dom-4" ? 4 : 2.5;
               const selectors = [
                 ".bubble",
                 ".avatar",
@@ -2176,7 +2177,7 @@ export default function App() {
                     <div className="scheme-badge-row">
                       <span className="scheme-tag optional">方案 5（局部轻校准）</span>
                     </div>
-                    <div className="scheme-title">仅问题文字上移 2px</div>
+                    <div className="scheme-title">仅问题文字上移 2.5px</div>
                     <div className="scheme-desc">
                       只在截图副本中移动气泡、头像及分析标签里的文字，背景、边框和正常聊天页保持不动。
                     </div>
@@ -2188,9 +2189,32 @@ export default function App() {
                         (!includeHeader && !includeMessages && !includeAnalysis) ||
                         (includeMessages && screenshotMessages.length === 0)
                       }
-                      onClick={() => handleGenerateScreenshot("dom-2")}
+                      onClick={() => handleGenerateScreenshot("dom-2-5")}
                     >
-                      {screenshotGenerating && screenshotEngine === "dom-2" ? <>⏳ 正在生成局部轻校准长图...</> : <><Camera size={16} /> 生成【方案 5：局部上移 2px】</>}
+                      {screenshotGenerating && screenshotEngine === "dom-2-5" ? <>⏳ 正在生成局部轻校准长图...</> : <><Camera size={16} /> 生成【方案 5：局部上移 2.5px】</>}
+                    </button>
+                  </div>
+
+                  {/* 方案 6: 保留经设备反馈有帮助的强校准路线 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 6（局部强校准）</span>
+                    </div>
+                    <div className="scheme-title">仅问题文字上移 4px</div>
+                    <div className="scheme-desc">
+                      当 2.5px 轻校准已有改善但仍然偏下时使用。只移动文字，不移动头像框、气泡框或消息行。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        screenshotGenerating ||
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => handleGenerateScreenshot("dom-4")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "dom-4" ? <>⏳ 正在生成局部强校准长图...</> : <><Camera size={16} /> 生成【方案 6：局部上移 4px】</>}
                     </button>
                   </div>
 
