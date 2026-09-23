@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.0.0-multi-solutions";
+const SCREENSHOT_VERSION = "v2.2.0-quad-engines";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -283,6 +283,7 @@ export default function App() {
   const [screenshotGenerating, setScreenshotGenerating] = useState(false);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
   const [isScrollMode, setIsScrollMode] = useState(false);
+  const [screenshotEngine, setScreenshotEngine] = useState<"calibrated" | "native">("calibrated");
   const [screenshotModeType, setScreenshotModeType] = useState<"card" | "chat">("card");
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const screenshotContainerRef = useRef<HTMLDivElement>(null);
@@ -447,35 +448,34 @@ export default function App() {
     return messages;
   })();
 
-  async function handleGenerateScreenshot() {
+  async function handleGenerateScreenshot(mode: "calibrated" | "native" = "calibrated") {
     if (!screenshotContainerRef.current) return;
     setScreenshotGenerating(true);
+    setScreenshotEngine(mode);
     setScreenshotError(null);
-
-    // 核心拦截器：无论安卓机型自带何种字体引擎或 offsetTop + 2 采样偏差，
-    // 在 Canvas 底层 fillText 绘制中文与文本时，强制向上修正 Y 坐标偏移（2.5px），
-    // 从而使所有气泡文字、头像文字、胶囊标签文字绝对居中对齐，杜绝下沉！
     const origGetContext = HTMLCanvasElement.prototype.getContext;
     const hookedCanvases = new WeakSet<object>();
 
     try {
-      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
-        const type = args[0];
-        const ctx: any = origGetContext.apply(this, args as any);
-        if (type === "2d" && ctx && !hookedCanvases.has(this)) {
-          hookedCanvases.add(this);
-          const origFillText = ctx.fillText;
-          ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
-            const offsetY = 2.5;
-            if (typeof maxWidth === "number") {
-              origFillText.call(this, textStr, x, y - offsetY, maxWidth);
-            } else {
-              origFillText.call(this, textStr, x, y - offsetY);
-            }
-          };
-        }
-        return ctx;
-      } as any;
+      if (mode === "calibrated") {
+        HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
+          const type = args[0];
+          const ctx: any = origGetContext.apply(this, args as any);
+          if (type === "2d" && ctx && !hookedCanvases.has(this)) {
+            hookedCanvases.add(this);
+            const origFillText = ctx.fillText;
+            ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
+              const offsetY = 3.0;
+              if (typeof maxWidth === "number") {
+                origFillText.call(this, textStr, x, y - offsetY, maxWidth);
+              } else {
+                origFillText.call(this, textStr, x, y - offsetY);
+              }
+            };
+          }
+          return ctx;
+        } as any;
+      }
 
       if (document.fonts) {
         await document.fonts.ready;
@@ -501,7 +501,6 @@ export default function App() {
         x: 0,
         y: 0,
         onclone: (clonedDoc) => {
-          // 1. 隔离 HTML/Body 避免小屏全局缩放或基线污染
           if (clonedDoc.documentElement) {
             clonedDoc.documentElement.style.fontSize = "14px";
             clonedDoc.documentElement.style.margin = "0";
@@ -512,35 +511,33 @@ export default function App() {
             clonedDoc.body.style.padding = "0";
             clonedDoc.body.style.backgroundColor = "#ededed";
           }
-
-          // 2. 同时劫持克隆文档 iframe 内的 Canvas context，保证双重覆盖
-          try {
-            const win: any = clonedDoc.defaultView;
-            if (win && win.HTMLCanvasElement && win.HTMLCanvasElement.prototype) {
-              const cloneOrigGetContext = win.HTMLCanvasElement.prototype.getContext;
-              win.HTMLCanvasElement.prototype.getContext = function (this: any, ...args: any[]) {
-                const type = args[0];
-                const ctx: any = cloneOrigGetContext.apply(this, args);
-                if (type === "2d" && ctx && !hookedCanvases.has(this)) {
-                  hookedCanvases.add(this);
-                  const origFill = ctx.fillText;
-                  ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
-                    const offsetY = 2.5;
-                    if (typeof maxWidth === "number") {
-                      origFill.call(this, textStr, x, y - offsetY, maxWidth);
-                    } else {
-                      origFill.call(this, textStr, x, y - offsetY);
-                    }
-                  };
-                }
-                return ctx;
-              };
-            }
-          } catch (_) {}
-
+          if (mode === "calibrated") {
+            try {
+              const win: any = clonedDoc.defaultView;
+              if (win && win.HTMLCanvasElement && win.HTMLCanvasElement.prototype) {
+                const cloneOrigGetContext = win.HTMLCanvasElement.prototype.getContext;
+                win.HTMLCanvasElement.prototype.getContext = function (this: any, ...args: any[]) {
+                  const type = args[0];
+                  const ctx: any = cloneOrigGetContext.apply(this, args);
+                  if (type === "2d" && ctx && !hookedCanvases.has(this)) {
+                    hookedCanvases.add(this);
+                    const origFill = ctx.fillText;
+                    ctx.fillText = function (this: any, textStr: string, x: number, y: number, maxWidth?: number) {
+                      const offsetY = 3.0;
+                      if (typeof maxWidth === "number") {
+                        origFill.call(this, textStr, x, y - offsetY, maxWidth);
+                      } else {
+                        origFill.call(this, textStr, x, y - offsetY);
+                      }
+                    };
+                  }
+                  return ctx;
+                };
+              }
+            } catch (_) {}
+          }
           const el = clonedDoc.querySelector(".screenshot-render-target") as HTMLElement | null;
           if (el) {
-            // 确保在克隆文档中处于确定物理流布局，清除负坐标
             el.style.position = "static";
             el.style.left = "0";
             el.style.top = "0";
@@ -559,7 +556,6 @@ export default function App() {
       console.error("Screenshot error:", err);
       setScreenshotError("长截图生成失败，请重试或减少截取条数");
     } finally {
-      // 截图完成后立即恢复原生 getContext，零污染全局其他业务与主项目
       HTMLCanvasElement.prototype.getContext = origGetContext;
       setScreenshotGenerating(false);
     }
@@ -1817,14 +1813,16 @@ export default function App() {
                 )}
 
                 <div className="screenshot-scheme-container">
-                  <div className="screenshot-scheme-header">请选择最适合您手机的导出方案：</div>
-                  
-                  {/* 方案 A: 网页自动帮您生成完整图片（无需任何手机滚动截屏，vivo等机型专治） */}
+                  <div className="screenshot-scheme-header">请选择最适合您手机的方案（一次性提供 4 套独立生成机制）：</div>
+
+                  {/* 方案 1: 安卓/vivo 专属校准引擎 */}
                   <div className="screenshot-scheme-card active-scheme">
-                    <div className="scheme-tag">⭐ 首选推荐 · 无需手机支持长截屏</div>
-                    <div className="scheme-title">方案一：直接生成高清长图文件</div>
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag">⭐ 方案 1（强烈推荐 · 专为 vivo / 安卓优化）</span>
+                    </div>
+                    <div className="scheme-title">安卓定制校准长图（免手机截屏）</div>
                     <div className="scheme-desc">
-                      网页自动将所选对话合成一张完整的超清 PNG 长图。生成后直接长按图片或点击按钮即可保存到手机相册，<strong>任何手机、任何浏览器均可直接保存</strong>。
+                      针对 vivo 及安卓机型底线偏置物理微移居中。点击后直接合成一张完整超清 PNG，<strong>长按图片直接存入手机相册</strong>。
                     </div>
                     <button
                       type="button"
@@ -1834,24 +1832,79 @@ export default function App() {
                         (!includeHeader && !includeMessages && !includeAnalysis) ||
                         (includeMessages && screenshotMessages.length === 0)
                       }
-                      onClick={handleGenerateScreenshot}
+                      onClick={() => handleGenerateScreenshot("calibrated")}
                     >
-                      {screenshotGenerating ? (
-                        <>⏳ 正在为您高清合成长图中...</>
+                      {screenshotGenerating && screenshotEngine === "calibrated" ? (
+                        <>⏳ 正在为您校准合成长图中...</>
                       ) : (
                         <>
-                          <Camera size={16} /> 立即一键生成长图（长按即可保存）
+                          <Camera size={16} /> 生成【方案 1：安卓校准版】长图
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* 方案 B: 原生全屏长网页（手机自带长截屏/滚动截屏专用） */}
+                  {/* 方案 2: 标准原生渲染引擎 */}
                   <div className="screenshot-scheme-card">
-                    <div className="scheme-tag optional">备选 · 适合自带滚动截屏的手机（如三星/小米/华为等）</div>
-                    <div className="scheme-title">方案二：全屏长页面模式（系统滚动截屏）</div>
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 2（标准引擎 · 兼容不同浏览器）</span>
+                    </div>
+                    <div className="scheme-title">标准原生排版长图（免手机截屏）</div>
                     <div className="scheme-desc">
-                      展开为无弹窗干扰的纯净长页面。手机按下截屏键后，若您的手机系统弹出<strong>【滚动截屏】/【长截屏】</strong>按钮，系统会自动滚屏截取整页。
+                      使用标准无偏移引擎合成。如果方案 1 在个别特殊浏览器中略偏上，可点击此方案合成原版字形。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        screenshotGenerating ||
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => handleGenerateScreenshot("native")}
+                    >
+                      {screenshotGenerating && screenshotEngine === "native" ? (
+                        <>⏳ 正在生成标准长图中...</>
+                      ) : (
+                        <>
+                          <Camera size={16} /> 生成【方案 2：标准原版】长图
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 方案 3: 浏览器系统打印导出长 PDF / 长文档 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag print-tag">方案 3（100% 浏览器原生排版 · 绝无错位）</span>
+                    </div>
+                    <div className="scheme-title">调用系统打印 / 导出 PDF 长文</div>
+                    <div className="scheme-desc">
+                      直接调用系统底层打印器，可选择<strong>“另存为 PDF”</strong>保存。字体完全采用手机原生渲染，文字绝对居中。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => {
+                        window.print();
+                      }}
+                    >
+                      🖨️ 开启【方案 3：系统打印/存PDF】
+                    </button>
+                  </div>
+
+                  {/* 方案 4: 原生全屏长页面模式 */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-badge-row">
+                      <span className="scheme-tag optional">方案 4（适合三星 / 小米等支持长截屏机型）</span>
+                    </div>
+                    <div className="scheme-title">全屏长页面模式（系统滚动截屏）</div>
+                    <div className="scheme-desc">
+                      展开为纯净长网页，供手机按下截屏键后，点击系统弹出的【滚动截屏】逐屏截取。
                     </div>
                     <button
                       type="button"
@@ -1865,7 +1918,7 @@ export default function App() {
                         setIsScrollMode(true);
                       }}
                     >
-                      📱 进入全屏长页面（尝试手机系统截屏）
+                      📱 进入【方案 4：全屏滚动截屏模式】
                     </button>
                   </div>
                 </div>
