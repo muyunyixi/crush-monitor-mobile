@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.4.1-vivo-layout-fix";
+const SCREENSHOT_VERSION = "v2.5.0-measured-canvas";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -285,11 +285,10 @@ export default function App() {
   const [isScrollMode, setIsScrollMode] = useState(false);
   type ScreenshotEngine =
     | "native"
+    | "measured-canvas"
     | "layout-lock"
-    | "font-metrics"
     | "canvas-3"
-    | "dom-2"
-    | "dom-4";
+    | "dom-2";
   const [screenshotEngine, setScreenshotEngine] = useState<ScreenshotEngine>("native");
   const [screenshotModeType, setScreenshotModeType] = useState<"card" | "chat">("card");
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
@@ -455,6 +454,216 @@ export default function App() {
     return messages;
   })();
 
+  function generateMeasuredCanvasScreenshot() {
+    const scale = 2;
+    const width = 414;
+    const probe = document.createElement("canvas");
+    const measure = probe.getContext("2d");
+    if (!measure) throw new Error("Canvas 2D context unavailable");
+    const fontFamily = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif';
+    measure.font = `15px ${fontFamily}`;
+
+    const wrap = (text: string, maxWidth: number, font = `15px ${fontFamily}`) => {
+      measure.font = font;
+      const output: string[] = [];
+      for (const paragraph of String(text).split("\n")) {
+        if (!paragraph) {
+          output.push("");
+          continue;
+        }
+        let line = "";
+        for (const char of Array.from(paragraph)) {
+          const candidate = line + char;
+          if (line && measure.measureText(candidate).width > maxWidth) {
+            output.push(line);
+            line = char;
+          } else {
+            line = candidate;
+          }
+        }
+        output.push(line);
+      }
+      return output.length ? output : [""];
+    };
+
+    type ManualRow = {
+      message: Message;
+      y: number;
+      lines: string[];
+      bubbleWidth: number;
+      bubbleHeight: number;
+      tags: string[];
+      timestamp?: string;
+    };
+    const rows: ManualRow[] = [];
+    let y = 52;
+    if (includeHeader) y += 126;
+    if (includeMessages) y += 34;
+    for (let index = 0; includeMessages && index < screenshotMessages.length; index++) {
+      const message = screenshotMessages[index];
+      const timestamp =
+        (index === 0 || message.timestamp !== screenshotMessages[index - 1]?.timestamp) && message.timestamp
+          ? message.timestamp.replace(/^\d{4}年/, "")
+          : undefined;
+      if (timestamp) y += 27;
+      const lines = wrap(message.text, 250);
+      measure.font = `15px ${fontFamily}`;
+      const widest = Math.max(...lines.map((line) => measure.measureText(line || " ").width));
+      const bubbleWidth = Math.min(278, Math.max(36, Math.ceil(widest) + 22));
+      const bubbleHeight = Math.max(36, lines.length * 22 + 12);
+      const result = a.lines[message.id];
+      const tags: string[] = [];
+      if (message.kind === "text" && result) {
+        if (message.sender === "other") {
+          if (result.emotions) {
+            tags.push(`情绪  ${topEmotions(result.emotions).map((item) => `${item.label} ${item.percent}`).join("  ")}`);
+          }
+          if (result.intents) {
+            tags.push(`意图  ${topIntents(result.intents).map((item) => `${item.label} ${item.percent}`).join("  ")}`);
+          }
+        } else {
+          tags.push(`回复评级：${replyRating(result.score.value)?.label ?? "待判断"}`);
+        }
+      }
+      rows.push({ message, y, lines, bubbleWidth, bubbleHeight, tags, timestamp });
+      y += Math.max(36, bubbleHeight) + (tags.length ? tags.length * 18 + 5 : 0) + 16;
+    }
+    if (includeAnalysis && ov) y += 132;
+    y += 24;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width * scale;
+    canvas.height = Math.ceil(y) * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context unavailable");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#ededed";
+    ctx.fillRect(0, 0, width, y);
+
+    const roundedRect = (x: number, top: number, w: number, h: number, radius: number) => {
+      const r = Math.min(radius, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, top);
+      ctx.arcTo(x + w, top, x + w, top + h, r);
+      ctx.arcTo(x + w, top + h, x, top + h, r);
+      ctx.arcTo(x, top + h, x, top, r);
+      ctx.arcTo(x, top, x + w, top, r);
+      ctx.closePath();
+    };
+    const centeredText = (text: string, x: number, centerY: number, align: CanvasTextAlign = "center") => {
+      const metrics = ctx.measureText(text || " ");
+      const ascent = metrics.actualBoundingBoxAscent || 11;
+      const descent = metrics.actualBoundingBoxDescent || 3;
+      ctx.textAlign = align;
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(text, x, centerY + (ascent - descent) / 2);
+    };
+
+    ctx.fillStyle = "#ededed";
+    ctx.fillRect(0, 0, width, 52);
+    ctx.fillStyle = "#181818";
+    ctx.font = `24px ${fontFamily}`;
+    centeredText("‹", 22, 26);
+    ctx.font = `600 16px ${fontFamily}`;
+    centeredText(other || "微信好友", width / 2, 20);
+    ctx.font = `11px ${fontFamily}`;
+    ctx.fillStyle = "#8a8a8a";
+    centeredText(RELATIONS[relation], width / 2, 38);
+    ctx.fillStyle = "#181818";
+    ctx.font = `22px ${fontFamily}`;
+    centeredText("•••", 386, 25);
+
+    let contentTop = 60;
+    if (includeHeader) {
+      roundedRect(11, contentTop, 392, 110, 9);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.fillStyle = "#2b7a4c";
+      ctx.font = `600 13px ${fontFamily}`;
+      ctx.textAlign = "left";
+      ctx.fillText("💚 Crush 聊天记录监视器", 25, contentTop + 23);
+      ctx.fillStyle = "#181818";
+      ctx.font = `600 15px ${fontFamily}`;
+      ctx.fillText(`与【${other || "对方"}】的对话档案`, 25, contentTop + 49);
+      const stats = [["心动指数", value == null ? "—" : `${value}%`], ["我的发挥", replyRating(quality)?.label ?? "—"], ["互动节奏", `${turns}次接话`], ["发言比例", `${selfCount}:${otherCount}`]];
+      stats.forEach(([label, valueText], index) => {
+        const centerX = 55 + index * 101;
+        ctx.font = `10px ${fontFamily}`;
+        ctx.fillStyle = "#999";
+        centeredText(label, centerX, contentTop + 73);
+        ctx.font = `600 15px ${fontFamily}`;
+        ctx.fillStyle = "#2b7a4c";
+        centeredText(valueText, centerX, contentTop + 93);
+      });
+      contentTop += 126;
+    }
+    if (includeMessages) {
+      ctx.fillStyle = "#777";
+      ctx.font = `11px ${fontFamily}`;
+      centeredText(`💬 聊天记录片段（共 ${screenshotMessages.length} 条）`, width / 2, contentTop + 12);
+    }
+
+    for (const row of rows) {
+      const selfMessage = row.message.sender === "self";
+      const avatarX = selfMessage ? 366 : 12;
+      const bubbleX = selfMessage ? 357 - row.bubbleWidth : 57;
+      const rowTop = row.y;
+      if (row.timestamp) {
+        ctx.fillStyle = "#999";
+        ctx.font = `11px ${fontFamily}`;
+        centeredText(row.timestamp, width / 2, rowTop - 14);
+      }
+      roundedRect(avatarX, rowTop, 36, 36, 4);
+      ctx.fillStyle = selfMessage ? "#354148" : "#cbd8e1";
+      ctx.fill();
+      ctx.fillStyle = selfMessage ? "#f3cf83" : "#41586a";
+      ctx.font = `15px ${fontFamily}`;
+      centeredText((selfMessage ? self : other).slice(0, 1), avatarX + 18, rowTop + 18);
+
+      roundedRect(bubbleX, rowTop, row.bubbleWidth, row.bubbleHeight, 4);
+      ctx.fillStyle = selfMessage ? "#95ec69" : "#fff";
+      ctx.fill();
+      ctx.beginPath();
+      const edgeX = selfMessage ? bubbleX + row.bubbleWidth : bubbleX;
+      ctx.moveTo(edgeX, rowTop + 14);
+      ctx.lineTo(edgeX + (selfMessage ? 6 : -6), rowTop + 18);
+      ctx.lineTo(edgeX, rowTop + 22);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = "#181818";
+      ctx.font = `15px ${fontFamily}`;
+      ctx.textAlign = "left";
+      const firstCenter = rowTop + (row.bubbleHeight - row.lines.length * 22) / 2 + 11;
+      row.lines.forEach((line, lineIndex) => {
+        centeredText(line, bubbleX + 11, firstCenter + lineIndex * 22, "left");
+      });
+      ctx.fillStyle = "#7f8786";
+      ctx.font = `10px ${fontFamily}`;
+      row.tags.forEach((tag, tagIndex) => {
+        ctx.textAlign = selfMessage ? "right" : "left";
+        ctx.fillText(tag, selfMessage ? bubbleX + row.bubbleWidth : bubbleX, rowTop + row.bubbleHeight + 17 + tagIndex * 18);
+      });
+    }
+
+    if (includeAnalysis && ov) {
+      const analysisTop = y - 142;
+      roundedRect(11, analysisTop, 392, 118, 9);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.fillStyle = "#181818";
+      ctx.font = `600 14px ${fontFamily}`;
+      ctx.textAlign = "left";
+      ctx.fillText("✨ 深度关系与意图诊断报告", 25, analysisTop + 25);
+      ctx.font = `12px ${fontFamily}`;
+      ctx.fillStyle = "#555";
+      ctx.fillText(`当前关系：${RELATIONS[relation]}`, 25, analysisTop + 52);
+      ctx.fillText(`互动节奏：${rhythm} · 共 ${screenshotMessages.length} 条消息`, 25, analysisTop + 76);
+      ctx.fillText("建议结合上下文判断，不用单条消息给关系下结论。", 25, analysisTop + 100);
+    }
+    return canvas.toDataURL("image/png");
+  }
+
   async function handleGenerateScreenshot(mode: ScreenshotEngine = "native") {
     if (!screenshotContainerRef.current) return;
     setScreenshotGenerating(true);
@@ -464,6 +673,10 @@ export default function App() {
     const hookedCanvases = new WeakSet<object>();
 
     try {
+      if (mode === "measured-canvas") {
+        setScreenshotDataUrl(generateMeasuredCanvasScreenshot());
+        return;
+      }
       if (mode === "canvas-3") {
         HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: any[]) {
           const type = args[0];
@@ -553,35 +766,11 @@ export default function App() {
               });
             }
 
-            // 方案 3：固定中文行盒与标签行高，避免设备字体的 ascent/descent
-            // 被浏览器按不同小数取整；仍使用稳定的 Canvas 输出，不走 foreignObject。
-            if (mode === "font-metrics") {
-              el.style.fontFamily = 'Arial, "Microsoft YaHei", sans-serif';
-              el.querySelectorAll<HTMLElement>(".bubble").forEach((bubble) => {
-                bubble.style.display = "grid";
-                bubble.style.alignItems = "center";
-                bubble.style.minHeight = "36px";
-                bubble.style.padding = "6px 11px";
-                bubble.style.fontSize = "15px";
-                bubble.style.lineHeight = "22px";
-                bubble.style.transform = "none";
-              });
-              el.querySelectorAll<HTMLElement>(".avatar").forEach((avatar) => {
-                avatar.style.fontSize = "15px";
-                avatar.style.lineHeight = "36px";
-                avatar.style.transform = "none";
-              });
-              el.querySelectorAll<HTMLElement>(".analysis-row-label, .emotion-tag, .intent-tag, .reply-tag").forEach((tag) => {
-                tag.style.lineHeight = "18px";
-                tag.style.transform = "none";
-              });
-            }
-
             // vivo/部分 Android WebView 的 Canvas 中文字体 metrics 会把字形画低。
             // DOM 校准方案不碰 Canvas API，而是在 html2canvas 的隔离副本中，仅上移
             // 气泡、头像与分析徽章内的文字碎片；背景、边框和正常页面完全不动。
-            if (mode === "dom-2" || mode === "dom-4") {
-              const offset = mode === "dom-4" ? 4 : 2;
+            if (mode === "dom-2") {
+              const offset = 2;
               const selectors = [
                 ".bubble",
                 ".avatar",
@@ -1915,14 +2104,14 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* 方案 2: 锁定头像与气泡几何关系 */}
+                  {/* 方案 2: 完全独立的手工 Canvas 排版器 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
                       <span className="scheme-tag">⭐ 方案 2（vivo 首选修复）</span>
                     </div>
-                    <div className="scheme-title">头像—气泡几何锁定</div>
+                    <div className="scheme-title">实测字形手工 Canvas 引擎</div>
                     <div className="scheme-desc">
-                      单行气泡固定为与头像等高并让文字在内部居中；多行气泡与头像保持同一上缘，只向下增长。<strong>不移动整个气泡</strong>，使用稳定的 Canvas 输出。
+                      完全不读取或截图 DOM。直接根据消息数据绘制头像、气泡、换行和标签，并读取本机字形的实际上下边界进行居中；与其余方案是<strong>完全不同的代码路径</strong>。
                     </div>
                     <button
                       type="button"
@@ -1932,34 +2121,34 @@ export default function App() {
                         (!includeHeader && !includeMessages && !includeAnalysis) ||
                         (includeMessages && screenshotMessages.length === 0)
                       }
-                      onClick={() => handleGenerateScreenshot("layout-lock")}
+                      onClick={() => handleGenerateScreenshot("measured-canvas")}
                     >
-                      {screenshotGenerating && screenshotEngine === "layout-lock" ? (
-                        <>⏳ 正在生成几何锁定长图...</>
+                      {screenshotGenerating && screenshotEngine === "measured-canvas" ? (
+                        <>⏳ 正在进行实测字形排版...</>
                       ) : (
                         <>
-                          <Camera size={16} /> 生成【方案 2：vivo 几何锁定】
+                          <Camera size={16} /> 生成【方案 2：实测 Canvas】
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* 方案 3: 固定中文行盒与字体度量 */}
+                  {/* 方案 3: 在 DOM 副本中锁定头像与气泡几何关系 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 3（字体度量归一化）</span>
+                      <span className="scheme-tag optional">方案 3（DOM 几何锁定）</span>
                     </div>
-                    <div className="scheme-title">固定中文行盒高度</div>
+                    <div className="scheme-title">头像—气泡尺寸锁定</div>
                     <div className="scheme-desc">
-                      统一气泡、头像和分析标签的字体族、字号与整数行高，减少 vivo 字体 ascent/descent 小数取整造成的下沉；同样输出完整 PNG。
+                      保留完整网页视觉，但在截图副本中强制单行气泡与头像等高、多行只向下增长，再由 html2canvas 生成。
                     </div>
                     <button
                       type="button"
                       className="secondary screenshot-generate-btn"
                       disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
-                      onClick={() => handleGenerateScreenshot("font-metrics")}
+                      onClick={() => handleGenerateScreenshot("layout-lock")}
                     >
-                      {screenshotGenerating && screenshotEngine === "font-metrics" ? <>⏳ 正在生成字体度量长图...</> : <><Camera size={16} /> 生成【方案 3：固定字体行盒】</>}
+                      {screenshotGenerating && screenshotEngine === "layout-lock" ? <>⏳ 正在生成 DOM 几何长图...</> : <><Camera size={16} /> 生成【方案 3：DOM 几何锁定】</>}
                     </button>
                   </div>
 
@@ -2005,28 +2194,6 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* 方案 6: 更强的局部文字微调 */}
-                  <div className="screenshot-scheme-card">
-                    <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 6（局部强校准）</span>
-                    </div>
-                    <div className="scheme-title">仅问题文字上移 4px</div>
-                    <div className="scheme-desc">
-                      仅当方案 5 修正幅度仍不够时使用，用于偏移特别明显的 vivo 浏览器版本。
-                    </div>
-                    <button
-                      type="button"
-                      className="secondary screenshot-generate-btn"
-                      disabled={
-                        screenshotGenerating ||
-                        (!includeHeader && !includeMessages && !includeAnalysis) ||
-                        (includeMessages && screenshotMessages.length === 0)
-                      }
-                      onClick={() => handleGenerateScreenshot("dom-4")}
-                    >
-                      {screenshotGenerating && screenshotEngine === "dom-4" ? <>⏳ 正在生成局部强校准长图...</> : <><Camera size={16} /> 生成【方案 6：局部上移 4px】</>}
-                    </button>
-                  </div>
                 </div>
               </div>
             )

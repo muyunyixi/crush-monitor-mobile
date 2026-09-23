@@ -2442,6 +2442,8 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   color: #41586a;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
   box-sizing: border-box;
+  align-self: flex-start;
+  margin: 0;
 }
 
 .screenshot-render-target .avatar.mine {
@@ -2455,6 +2457,8 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  align-self: flex-start;
+  margin: 0;
 }
 
 .screenshot-render-target .message.self .message-content {
@@ -2479,6 +2483,8 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   max-width: 100%;
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
   box-sizing: border-box;
+  align-self: flex-start;
+  margin: 0;
 }
 
 /* 对方白色气泡 */
