@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.5.3-manual-tag-styles";
+const SCREENSHOT_VERSION = "v2.5.4-tag-baseline-fix";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -597,6 +597,19 @@ export default function App() {
 
       const rowLabel = tag.kind === "emotion" ? "情绪" : "意图";
       ctx.font = `10px ${fontFamily}`;
+      // 同一标签行必须共用 alphabetic baseline。若每段文字分别按自身
+      // bounding box 居中，数字因缺少中文下降部会在视觉上偏上。
+      const referenceMetrics = ctx.measureText("情绪Ag88%");
+      const tagBaseline =
+        top + 9.5 +
+        ((referenceMetrics.actualBoundingBoxAscent || 8) -
+          (referenceMetrics.actualBoundingBoxDescent || 2)) /
+          2;
+      const drawAlignedTagText = (text: string, centerX: number) => {
+        ctx.textAlign = "center";
+        ctx.textBaseline = "alphabetic";
+        ctx.fillText(text, centerX, tagBaseline);
+      };
       let totalWidth = 28;
       const widths = tag.items.map((item) => {
         const labelWidth = Math.ceil(ctx.measureText(item.label).width) + 10;
@@ -607,7 +620,7 @@ export default function App() {
       });
       let x = alignRight ? startX - totalWidth : startX;
       ctx.fillStyle = "#8c9392";
-      centeredText(rowLabel, x + 10, top + 9.5);
+      drawAlignedTagText(rowLabel, x + 10);
       x += 28;
       tag.items.forEach((item, index) => {
         const dims = widths[index];
@@ -617,7 +630,7 @@ export default function App() {
           ctx.fillStyle = palette.fill;
           ctx.fill();
           ctx.fillStyle = palette.ink;
-          centeredText(item.label, x + dims.labelWidth / 2, top + 9.5);
+          drawAlignedTagText(item.label, x + dims.labelWidth / 2);
           ctx.fillStyle = "rgba(255,255,255,.72)";
           ctx.fillRect(x + dims.labelWidth, top, dims.percentWidth, 19);
           ctx.strokeStyle = palette.line;
@@ -626,15 +639,15 @@ export default function App() {
           ctx.lineTo(x + dims.labelWidth, top + 17);
           ctx.stroke();
           ctx.fillStyle = palette.ink;
-          centeredText(item.percent, x + dims.labelWidth + dims.percentWidth / 2, top + 9.5);
+          drawAlignedTagText(item.percent, x + dims.labelWidth + dims.percentWidth / 2);
         } else {
           roundedRect(x, top, dims.width, 19, 4);
           ctx.fillStyle = "#e7edf4";
           ctx.fill();
           ctx.fillStyle = "#61738a";
-          centeredText(item.label, x + dims.labelWidth / 2, top + 9.5);
+          drawAlignedTagText(item.label, x + dims.labelWidth / 2);
           ctx.fillStyle = "#8492a2";
-          centeredText(item.percent, x + dims.labelWidth + dims.percentWidth / 2, top + 9.5);
+          drawAlignedTagText(item.percent, x + dims.labelWidth + dims.percentWidth / 2);
         }
         x += dims.width + 4;
       });
@@ -673,6 +686,8 @@ export default function App() {
       centeredText(relationText, 389 - relationWidth / 2, contentTop + 21);
       ctx.fillStyle = "#181818";
       ctx.font = `600 15px ${fontFamily}`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
       ctx.fillText(`与【${other || "对方"}】的对话档案`, 25, contentTop + 49);
       const stats = [["心动指数", value == null ? "—" : `${value}%`], ["我的发挥", replyRating(quality)?.label ?? "—"], ["互动节奏", `${turns}次接话`], ["发言比例", `${selfCount}:${otherCount}`]];
       stats.forEach(([label, valueText], index) => {
