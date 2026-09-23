@@ -2252,60 +2252,105 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   z-index: -999;
   pointer-events: none;
   visibility: visible;
-  padding-bottom: 24px;
+  padding-bottom: 2rem;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* 顶部微信原生风格头部 */
+.ssr-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 3.6rem;
+  padding: 0 0.8rem;
+  background: #ededed;
+  border-bottom: 1px solid #d8d8d8;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.ssr-head-back,
+.ssr-head-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  color: #161616;
+}
+
+.ssr-head-title {
+  text-align: center;
+}
+
+.ssr-head-title h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #181818;
+  line-height: 1.25;
+}
+
+.ssr-head-title span {
+  display: block;
+  font-size: 0.65rem;
+  color: #8b8b8b;
+  line-height: 1.35;
+  margin-top: 0.125rem;
+}
+
+/* 顶部对话档案与统计摘要卡片 */
 .ssr-header-card {
-  margin: 14px 12px 10px;
-  padding: 16px;
+  margin: 0.85rem 0.75rem 0.6rem;
+  padding: 0.95rem 1rem;
   background: #ffffff;
-  border: 1px solid #dfdfdf;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 0.625rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
 }
 
 .ssr-top-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 0.5rem;
 }
 
 .ssr-logo {
-  font-size: 13px;
+  font-size: 0.8125rem;
   font-weight: 700;
   color: #2b7a4c;
 }
 
 .ssr-badge {
-  padding: 3px 8px;
+  padding: 0.2rem 0.5rem;
   border-radius: 999px;
   background: #eef7f1;
   color: #2b6e46;
-  font-size: 11px;
+  font-size: 0.6875rem;
   font-weight: 600;
 }
 
 .ssr-contact-row h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 1.05rem;
   color: #1a1a1a;
   font-weight: 700;
 }
 
 .ssr-contact-row p {
-  margin: 4px 0 0;
-  font-size: 11px;
+  margin: 0.25rem 0 0;
+  font-size: 0.7rem;
   color: #8c8c8c;
 }
 
 .ssr-stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6px;
-  margin-top: 14px;
-  padding-top: 12px;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
   border-top: 1px solid #f0f0f0;
 }
 
@@ -2317,161 +2362,236 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 }
 
 .ssr-stat-item small {
-  font-size: 10px;
+  font-size: 0.65rem;
   color: #999;
-  margin-bottom: 2px;
+  margin-bottom: 0.15rem;
 }
 
 .ssr-stat-item strong {
-  font-size: 13px;
+  font-size: 0.85rem;
   font-weight: 700;
   color: #2b6b47;
 }
 
+/* 核心聊天列表区域：继承并对齐移动端微信气泡视觉标准 */
 .ssr-messages-wrap {
-  margin: 10px 12px;
+  margin: 0.6rem 0.75rem;
 }
 
 .ssr-messages-title {
   text-align: center;
-  margin: 8px 0 12px;
+  margin: 0.6rem 0 0.9rem;
 }
 
 .ssr-messages-title span {
   display: inline-block;
-  padding: 4px 10px;
+  padding: 0.25rem 0.65rem;
   border-radius: 999px;
   background: #dedede;
   color: #737373;
-  font-size: 11px;
+  font-size: 0.6875rem;
 }
 
 .ssr-messages-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
 }
 
-.ssr-msg-row {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
+/* 离屏渲染器内的消息行与气泡：使用微信原生比例与 relative rem */
+.screenshot-render-target .message {
+  margin-bottom: 1.15rem;
+  min-width: 0;
 }
 
-.ssr-msg-time {
-  align-self: center;
-  font-size: 10px;
+.screenshot-render-target .timestamp {
+  text-align: center;
   color: #a0a0a0;
-  margin-bottom: 6px;
-  padding: 1px 6px;
-  border-radius: 4px;
+  font-size: 0.75rem;
+  margin-bottom: 0.9rem;
 }
 
-.ssr-msg-content {
+.screenshot-render-target .message-row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  width: 100%;
+  gap: 0.65rem;
+  min-width: 0;
 }
 
-.ssr-msg-row.self .ssr-msg-content {
-  justify-content: flex-end;
+.screenshot-render-target .message.self .message-row {
+  flex-direction: row-reverse;
 }
 
-.ssr-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 4px;
+.screenshot-render-target .avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.25rem;
+  font-size: 1.05rem;
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
-  flex-shrink: 0;
+  background: linear-gradient(145deg, #bdcbd7, #d6e0e7);
+  color: #41586a;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
 }
 
-.other-avatar {
-  background: #507865;
+.screenshot-render-target .avatar.mine {
+  background: linear-gradient(145deg, #222b31, #4d5a60);
+  color: #f3cf83;
 }
 
-.self-avatar {
-  background: #2b4539;
-}
-
-.ssr-bubble-group {
+.screenshot-render-target .message-content {
+  min-width: 0;
+  max-width: calc(100% - 4.8rem);
   display: flex;
   flex-direction: column;
-  max-width: 275px;
+  align-items: flex-start;
 }
 
-.ssr-speaker-name {
-  font-size: 11px;
-  color: #8c8c8c;
-  margin-bottom: 3px;
-  margin-left: 2px;
+.screenshot-render-target .message.self .message-content {
+  align-items: flex-end;
 }
 
-.ssr-bubble {
-  padding: 9px 12px;
-  font-size: 14px;
-  line-height: 1.5;
-  border-radius: 6px;
-  word-break: break-word;
+/* 微信气泡：紧贴文字、自然扩展、消除无谓留白与截断 */
+.screenshot-render-target .bubble {
+  padding: 0.58rem 0.75rem;
+  border-radius: 0.3rem;
+  font-size: 1.05rem;
+  line-height: 1.55;
+  color: #181818;
+  position: relative;
   white-space: pre-wrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  width: fit-content;
+  max-width: 100%;
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
 }
 
-.bubble-other {
+/* 对方白色气泡 */
+.screenshot-render-target .bubble {
   background: #ffffff;
-  color: #191919;
-  border: 1px solid #d9d9d9;
+  border: none;
 }
 
-.bubble-self {
+.screenshot-render-target .bubble:before {
+  content: "";
+  position: absolute;
+  left: -0.28rem;
+  top: 0.85rem;
+  width: 0.58rem;
+  height: 0.58rem;
+  background: inherit;
+  transform: rotate(45deg);
+}
+
+/* 自己绿色气泡：与网页完全统一微信绿 */
+.screenshot-render-target .message.self .bubble {
   background: #95ec69;
-  color: #000000;
-  border: 1px solid #7ecc53;
+  border: none;
+  color: #181818;
 }
 
-.ssr-mini-score {
-  font-size: 10px;
-  color: #3b7454;
-  margin-top: 3px;
-  margin-left: 2px;
+.screenshot-render-target .message.self .bubble:before {
+  left: auto;
+  right: -0.28rem;
 }
 
+/* 分析标签组：精确贴合在气泡正下方，统一对齐 */
+.screenshot-render-target .message-tags {
+  margin-top: 0.38rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-width: 100%;
+}
+
+.screenshot-render-target .message-tags.self {
+  align-items: flex-end;
+}
+
+.screenshot-render-target .analysis-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.screenshot-render-target .analysis-row-label {
+  color: #8c9392;
+  font-size: 0.65rem;
+  line-height: 1.1rem;
+  margin-right: 0.125rem;
+}
+
+.screenshot-render-target .emotion-tag,
+.screenshot-render-target .intent-tag,
+.screenshot-render-target .reply-tag {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  min-height: 1.25rem;
+  border-radius: 0.25rem;
+  box-sizing: border-box;
+}
+
+.screenshot-render-target .emotion-tag {
+  padding: 0;
+  overflow: hidden;
+}
+
+.screenshot-render-target .emotion-tag span {
+  padding: 0.08rem 0.32rem;
+}
+
+.screenshot-render-target .emotion-tag b {
+  padding: 0.08rem 0.32rem;
+}
+
+.screenshot-render-target .intent-tag {
+  padding: 0.08rem 0.38rem;
+}
+
+.screenshot-render-target .reply-tag {
+  padding: 0.08rem 0.42rem;
+}
+
+/* 底部深度诊断报告卡片 */
 .ssr-analysis-card {
-  margin: 14px 12px 10px;
-  padding: 14px 16px;
+  margin: 0.85rem 0.75rem 0.6rem;
+  padding: 0.95rem 1rem;
   background: #ffffff;
-  border: 1px solid #dedede;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 0.625rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
 }
 
 .ssr-analysis-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 14px;
+  gap: 0.38rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: #274c36;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  margin-bottom: 0.65rem;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .ssr-analysis-body {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.4rem;
 }
 
 .ssr-analysis-row {
   display: flex;
   align-items: center;
-  font-size: 12px;
+  font-size: 0.75rem;
 }
 
 .ssr-analysis-label {
@@ -2488,24 +2608,24 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 }
 
 .ssr-analysis-desc {
-  margin-top: 4px;
-  padding: 8px 10px;
-  border-radius: 6px;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 0.375rem;
   background: #f7faf8;
   color: #4f5f56;
-  font-size: 11px;
+  font-size: 0.7rem;
   line-height: 1.5;
-  border-left: 3px solid #3c8d5e;
+  border-left: 0.2rem solid #3c8d5e;
 }
 
 .ssr-footer {
   text-align: center;
-  margin-top: 14px;
-  padding-inline: 12px;
+  margin-top: 1rem;
+  padding-inline: 0.75rem;
 }
 
 .ssr-footer span {
-  font-size: 10px;
+  font-size: 0.65rem;
   color: #9c9c9c;
 }
 
@@ -2518,73 +2638,4 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 
 .screenshot-tip-wechat strong {
   color: #5c3c05;
-}
-
-/* Screenshot Detailed Tags Styling */
-.ssr-bubble-group {
-  display: flex;
-  flex-direction: column;
-  max-width: 310px;
-}
-
-.ssr-msg-row.self .ssr-bubble-group {
-  align-items: flex-end;
-}
-
-.ssr-messages-wrap .message-tags {
-  margin-top: 5px;
-  width: 100%;
-}
-
-.ssr-messages-wrap .message-tags.other {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
-
-.ssr-messages-wrap .message-tags.self {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.ssr-messages-wrap .analysis-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.ssr-messages-wrap .analysis-row-label {
-  color: #8c9392;
-  font-size: 10px;
-  line-height: 18px;
-  margin-right: 2px;
-}
-
-.ssr-messages-wrap .emotion-tag,
-.ssr-messages-wrap .intent-tag,
-.ssr-messages-wrap .reply-tag {
-  display: inline-flex;
-  align-items: center;
-  pointer-events: none;
-  font-size: 11px;
-  line-height: 16px;
-  min-height: 20px;
-  border-radius: 4px;
-  padding: 1px 6px;
-  box-sizing: border-box;
-}
-
-.ssr-messages-wrap .emotion-tag {
-  padding: 0;
-  overflow: hidden;
-}
-
-.ssr-messages-wrap .emotion-tag span {
-  padding: 1px 5px;
-}
-
-.ssr-messages-wrap .emotion-tag b {
-  padding: 1px 5px;
 }

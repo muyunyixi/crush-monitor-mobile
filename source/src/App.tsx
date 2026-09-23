@@ -735,7 +735,7 @@ export default function App() {
                     {(i === 0 || m.timestamp !== messages[i - 1].timestamp) &&
                       m.timestamp && (
                         <div className="timestamp">
-                          {m.timestamp.replace(/^\d{4}年/, "")}
+                          {m.timestamp ? m.timestamp.replace(/^\d{4}年/, "") : ""}
                         </div>
                       )}
                     <div className="message-row">
@@ -1754,6 +1754,24 @@ export default function App() {
         className="screenshot-render-target"
         aria-hidden="true"
       >
+        {/* 顶部真实微信风格导航栏 */}
+        <header className="ssr-chat-head">
+          <div className="ssr-head-back">
+            <ArrowLeft size={28} strokeWidth={1.8} />
+          </div>
+          <div className="ssr-head-title">
+            <h2>{other || "微信好友"}</h2>
+            <span>
+              {imperialMode ? "御前模式 · " : ""}
+              {RELATIONS[relation]}
+            </span>
+          </div>
+          <div className="ssr-head-more">
+            <MoreHorizontal size={26} strokeWidth={2} />
+          </div>
+        </header>
+
+        {/* 顶部关系与互动档案卡片（可勾选） */}
         {includeHeader && (
           <div className="ssr-header-card">
             <div className="ssr-top-row">
@@ -1796,38 +1814,38 @@ export default function App() {
           </div>
         )}
 
+        {/* 核心消息流：1:1 原生映射页面真实结构与样式 */}
         {includeMessages && (
           <div className="ssr-messages-wrap">
             <div className="ssr-messages-title">
               <span>💬 聊天记录片段（共 {screenshotMessages.length} 条）</span>
             </div>
             <div className="ssr-messages-list">
-              {screenshotMessages.map((m) => {
+              {screenshotMessages.map((m, i) => {
                 const isOther = m.sender === "other";
                 const lineResult = a.lines[m.id];
+                const showTimestamp =
+                  (i === 0 || m.timestamp !== screenshotMessages[i - 1]?.timestamp) &&
+                  Boolean(m.timestamp);
+
                 return (
                   <div
                     key={m.id}
-                    className={`ssr-msg-row ${isOther ? "other" : "self"}`}
+                    className={`message ${m.sender}`}
                   >
-                    {m.timestamp && (
-                      <div className="ssr-msg-time">{m.timestamp}</div>
+                    {showTimestamp && (
+                      <div className="timestamp">
+                        {m.timestamp ? m.timestamp.replace(/^\d{4}年/, "") : ""}
+                      </div>
                     )}
-                    <div className="ssr-msg-content">
-                      {isOther && (
-                        <div className="ssr-avatar other-avatar">
-                          {other.slice(0, 1)}
-                        </div>
-                      )}
-                      <div className="ssr-bubble-group">
-                        {isOther && (
-                          <span className="ssr-speaker-name">{other}</span>
-                        )}
-                        <div
-                          className={`ssr-bubble ${isOther ? "bubble-other" : "bubble-self"}`}
-                        >
-                          {m.text}
-                        </div>
+                    <div className="message-row">
+                      <div
+                        className={`avatar ${m.sender === "self" ? "mine" : ""}`}
+                      >
+                        {(m.sender === "self" ? self : other).slice(0, 1)}
+                      </div>
+                      <div className="message-content">
+                        <div className="bubble">{m.text}</div>
                         {m.kind === "text" && (
                           <div className={`message-tags ${m.sender}`}>
                             {isOther ? (
@@ -1877,22 +1895,12 @@ export default function App() {
                                     {replyRating(lineResult.score.value)?.label ??
                                       "待判断"}
                                   </b>
-                                  {lineResult.score.value != null && (
-                                    <span style={{ fontSize: "10px", marginLeft: "2px" }}>
-                                      （{lineResult.score.value}分）
-                                    </span>
-                                  )}
                                 </span>
                               </div>
                             ) : null}
                           </div>
                         )}
                       </div>
-                      {!isOther && (
-                        <div className="ssr-avatar self-avatar">
-                          {self === "我" ? "我" : self.slice(0, 1)}
-                        </div>
-                      )}
                     </div>
                   </div>
                 );
@@ -1901,6 +1909,7 @@ export default function App() {
           </div>
         )}
 
+        {/* 底部深度分析报告卡片（可勾选） */}
         {includeAnalysis && ov && (
           <div className="ssr-analysis-card">
             <div className="ssr-analysis-title">
