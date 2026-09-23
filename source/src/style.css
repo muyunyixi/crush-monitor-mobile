@@ -2508,3 +2508,83 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   font-size: 10px;
   color: #9c9c9c;
 }
+
+/* WeChat Specific Tip */
+.screenshot-tip-wechat {
+  background: #fff8ea !important;
+  border: 1px solid #f6deb0 !important;
+  color: #7d5612 !important;
+}
+
+.screenshot-tip-wechat strong {
+  color: #5c3c05;
+}
+
+/* Screenshot Detailed Tags Styling */
+.ssr-bubble-group {
+  display: flex;
+  flex-direction: column;
+  max-width: 310px;
+}
+
+.ssr-msg-row.self .ssr-bubble-group {
+  align-items: flex-end;
+}
+
+.ssr-messages-wrap .message-tags {
+  margin-top: 5px;
+  width: 100%;
+}
+
+.ssr-messages-wrap .message-tags.other {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.ssr-messages-wrap .message-tags.self {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ssr-messages-wrap .analysis-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.ssr-messages-wrap .analysis-row-label {
+  color: #8c9392;
+  font-size: 10px;
+  line-height: 18px;
+  margin-right: 2px;
+}
+
+.ssr-messages-wrap .emotion-tag,
+.ssr-messages-wrap .intent-tag,
+.ssr-messages-wrap .reply-tag {
+  display: inline-flex;
+  align-items: center;
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 16px;
+  min-height: 20px;
+  border-radius: 4px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+}
+
+.ssr-messages-wrap .emotion-tag {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ssr-messages-wrap .emotion-tag span {
+  padding: 1px 5px;
+}
+
+.ssr-messages-wrap .emotion-tag b {
+  padding: 1px 5px;
+}

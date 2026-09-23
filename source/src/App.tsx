@@ -433,6 +433,10 @@ export default function App() {
           ? "我方更主动"
           : "对方更主动";
 
+  const isWeChat =
+    typeof navigator !== "undefined" &&
+    /micromessenger/i.test(navigator.userAgent);
+
   const screenshotMessages = (() => {
     if (screenshotRange === "10") return messages.slice(-10);
     if (screenshotRange === "20") return messages.slice(-20);
@@ -1395,8 +1399,21 @@ export default function App() {
           ) : detail === "screenshot" ? (
             screenshotDataUrl ? (
               <div className="screenshot-preview-pane">
-                <div className="screenshot-tip">
-                  <Sparkles size={15} /> 提示：在手机上<strong>长按下方长图</strong>即可直接【保存到相册】或发送给好友。
+                <div className={`screenshot-tip ${isWeChat ? "screenshot-tip-wechat" : ""}`}>
+                  {isWeChat ? (
+                    <div>
+                      <div style={{ fontWeight: 600, marginBottom: "3px" }}>
+                        ⚠️ 微信内保存长图提示
+                      </div>
+                      <div>
+                        微信内置浏览器限制了直接下载。建议点击右上角<strong>【···】</strong>选择<strong>【在浏览器打开】</strong>进行顺畅保存；或者在下方长按图片选择<strong>【保存图片】</strong>。
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <Sparkles size={15} /> 提示：在系统浏览器中可点击下方<strong>【保存长图到本地相册】</strong>一键下载，也可在手机上<strong>长按下方长图</strong>选择【保存图片】。
+                    </div>
+                  )}
                 </div>
                 <div className="screenshot-img-container">
                   <img
@@ -1410,6 +1427,11 @@ export default function App() {
                     href={screenshotDataUrl}
                     download={`crush-chat-${other || "record"}-${new Date().toISOString().slice(0, 10)}.png`}
                     className="primary screenshot-download-btn"
+                    onClick={() => {
+                      if (isWeChat) {
+                        setNotice("微信内限制直接下载文件，请长按图片保存或在右上角【···】选择在浏览器打开。");
+                      }
+                    }}
                   >
                     <Download size={16} /> 保存长图到本地相册
                   </a>
@@ -1470,8 +1492,8 @@ export default function App() {
                         onChange={(e) => setIncludeMessages(e.target.checked)}
                       />
                       <div>
-                        <strong>聊天气泡记录</strong>
-                        <span>真实微信对话气泡排布（已选 {screenshotMessages.length} 条）</span>
+                        <strong>聊天气泡与逐句详细分析</strong>
+                        <span>完整保留微信气泡、逐句情绪与意图标签、回复评级（已选 {screenshotMessages.length} 条）</span>
                       </div>
                     </label>
                     <label className="screenshot-checkbox-item">
@@ -1806,10 +1828,64 @@ export default function App() {
                         >
                           {m.text}
                         </div>
-                        {isOther && lineResult?.score?.value != null && (
-                          <span className="ssr-mini-score">
-                            好感度 {lineResult.score.value}
-                          </span>
+                        {m.kind === "text" && (
+                          <div className={`message-tags ${m.sender}`}>
+                            {isOther ? (
+                              <>
+                                {lineResult?.emotions && (
+                                  <div className="analysis-row emotion-row">
+                                    <span className="analysis-row-label">
+                                      情绪
+                                    </span>
+                                    {topEmotions(lineResult.emotions).map(
+                                      (emotion) => (
+                                        <span
+                                          key={emotion.key}
+                                          className={`emotion-tag emotion-${emotion.key}`}
+                                        >
+                                          <span>{emotion.label}</span>
+                                          <b>{emotion.percent}</b>
+                                        </span>
+                                      ),
+                                    )}
+                                  </div>
+                                )}
+                                {lineResult?.intents && (
+                                  <div className="analysis-row intent-row">
+                                    <span className="analysis-row-label">
+                                      意图
+                                    </span>
+                                    {topIntents(lineResult.intents).map(
+                                      (intent) => (
+                                        <span
+                                          key={intent.key}
+                                          className="intent-tag"
+                                        >
+                                          <span>{intent.label}</span>
+                                          <b>{intent.percent}</b>
+                                        </span>
+                                      ),
+                                    )}
+                                  </div>
+                                )}
+                              </>
+                            ) : lineResult ? (
+                              <div className="analysis-row">
+                                <span className="reply-tag">
+                                  <span>回复评级：</span>
+                                  <b>
+                                    {replyRating(lineResult.score.value)?.label ??
+                                      "待判断"}
+                                  </b>
+                                  {lineResult.score.value != null && (
+                                    <span style={{ fontSize: "10px", marginLeft: "2px" }}>
+                                      （{lineResult.score.value}分）
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
                         )}
                       </div>
                       {!isOther && (
