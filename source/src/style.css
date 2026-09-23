@@ -2255,7 +2255,7 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   padding-bottom: 28px;
   font-size: 14px;
   line-height: 1.4;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -2463,7 +2463,7 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 
 /* 微信气泡：紧贴文字、自然扩展、消除无谓留白与截断 */
 .screenshot-render-target .bubble {
-  padding: 8px 11px;
+  padding: 6px 11px 10px;
   border-radius: 4px;
   font-size: 15px;
   line-height: 1.45;
