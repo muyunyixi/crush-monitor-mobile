@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v2.4.0-vivo-render-lab";
+const SCREENSHOT_VERSION = "v2.4.1-vivo-layout-fix";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -285,8 +285,8 @@ export default function App() {
   const [isScrollMode, setIsScrollMode] = useState(false);
   type ScreenshotEngine =
     | "native"
-    | "svg-dom"
-    | "foreign-object"
+    | "layout-lock"
+    | "font-metrics"
     | "canvas-3"
     | "dom-2"
     | "dom-4";
@@ -493,58 +493,9 @@ export default function App() {
       const renderWidth = targetEl.offsetWidth || 414;
       const renderHeight = targetEl.scrollHeight || targetEl.offsetHeight;
 
-      // 独立 SVG/DOM 渲染链路：不让 html2canvas 重新计算中文字体 baseline。
-      // 浏览器先按真实 DOM 完成排版，再把 foreignObject 整体栅格化为 PNG。
-      if (mode === "svg-dom") {
-        const clone = targetEl.cloneNode(true) as HTMLElement;
-        clone.style.position = "static";
-        clone.style.left = "0";
-        clone.style.top = "0";
-        clone.style.margin = "0";
-        clone.style.transform = "none";
-        clone.style.width = "414px";
-        clone.style.minWidth = "414px";
-        clone.style.maxWidth = "414px";
-
-        const cssText = Array.from(document.styleSheets)
-          .map((sheet) => {
-            try {
-              return Array.from(sheet.cssRules).map((rule) => rule.cssText).join("\n");
-            } catch {
-              return "";
-            }
-          })
-          .join("\n");
-        const serialized = new XMLSerializer().serializeToString(clone);
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${renderWidth}" height="${renderHeight}" viewBox="0 0 ${renderWidth} ${renderHeight}"><foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="width:${renderWidth}px;height:${renderHeight}px;background:#ededed"><style>${cssText.replace(/<\/style/gi, "<\\/style")}</style>${serialized}</div></foreignObject></svg>`;
-        const objectUrl = URL.createObjectURL(
-          new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
-        );
-        try {
-          const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const nextImage = new Image();
-            nextImage.onload = () => resolve(nextImage);
-            nextImage.onerror = () => reject(new Error("SVG DOM rasterization failed"));
-            nextImage.src = objectUrl;
-          });
-          const svgCanvas = document.createElement("canvas");
-          svgCanvas.width = renderWidth * 2;
-          svgCanvas.height = renderHeight * 2;
-          const svgContext = svgCanvas.getContext("2d");
-          if (!svgContext) throw new Error("Canvas 2D context unavailable");
-          svgContext.fillStyle = "#ededed";
-          svgContext.fillRect(0, 0, svgCanvas.width, svgCanvas.height);
-          svgContext.drawImage(image, 0, 0, svgCanvas.width, svgCanvas.height);
-          setScreenshotDataUrl(svgCanvas.toDataURL("image/png"));
-          return;
-        } finally {
-          URL.revokeObjectURL(objectUrl);
-        }
-      }
-
       const canvas = await html2canvas(targetEl, {
         scale: 2,
-        foreignObjectRendering: mode === "foreign-object",
+        foreignObjectRendering: false,
         useCORS: true,
         allowTaint: false,
         backgroundColor: "#ededed",
@@ -578,6 +529,53 @@ export default function App() {
             el.style.width = "414px";
             el.style.minWidth = "414px";
             el.style.maxWidth = "414px";
+
+            // 方案 2：锁定消息行的几何关系，不移动气泡。
+            // 单行气泡与 36px 头像等高并内部居中；多行保持相同上缘，只向下增长。
+            if (mode === "layout-lock") {
+              el.querySelectorAll<HTMLElement>(".message-row").forEach((row) => {
+                row.style.alignItems = "flex-start";
+              });
+              el.querySelectorAll<HTMLElement>(".avatar").forEach((avatar) => {
+                avatar.style.width = "36px";
+                avatar.style.height = "36px";
+                avatar.style.minWidth = "36px";
+                avatar.style.minHeight = "36px";
+                avatar.style.transform = "none";
+              });
+              el.querySelectorAll<HTMLElement>(".bubble").forEach((bubble) => {
+                bubble.style.display = "grid";
+                bubble.style.alignItems = "center";
+                bubble.style.minHeight = "36px";
+                bubble.style.padding = "6px 11px";
+                bubble.style.lineHeight = "22px";
+                bubble.style.transform = "none";
+              });
+            }
+
+            // 方案 3：固定中文行盒与标签行高，避免设备字体的 ascent/descent
+            // 被浏览器按不同小数取整；仍使用稳定的 Canvas 输出，不走 foreignObject。
+            if (mode === "font-metrics") {
+              el.style.fontFamily = 'Arial, "Microsoft YaHei", sans-serif';
+              el.querySelectorAll<HTMLElement>(".bubble").forEach((bubble) => {
+                bubble.style.display = "grid";
+                bubble.style.alignItems = "center";
+                bubble.style.minHeight = "36px";
+                bubble.style.padding = "6px 11px";
+                bubble.style.fontSize = "15px";
+                bubble.style.lineHeight = "22px";
+                bubble.style.transform = "none";
+              });
+              el.querySelectorAll<HTMLElement>(".avatar").forEach((avatar) => {
+                avatar.style.fontSize = "15px";
+                avatar.style.lineHeight = "36px";
+                avatar.style.transform = "none";
+              });
+              el.querySelectorAll<HTMLElement>(".analysis-row-label, .emotion-tag, .intent-tag, .reply-tag").forEach((tag) => {
+                tag.style.lineHeight = "18px";
+                tag.style.transform = "none";
+              });
+            }
 
             // vivo/部分 Android WebView 的 Canvas 中文字体 metrics 会把字形画低。
             // DOM 校准方案不碰 Canvas API，而是在 html2canvas 的隔离副本中，仅上移
@@ -1917,14 +1915,14 @@ export default function App() {
                     </button>
                   </div>
 
-                  {/* 方案 2: 绕过 html2canvas 文本基线计算的独立 DOM/SVG 引擎 */}
+                  {/* 方案 2: 锁定头像与气泡几何关系 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
                       <span className="scheme-tag">⭐ 方案 2（vivo 首选修复）</span>
                     </div>
-                    <div className="scheme-title">真实 DOM → SVG 栅格化</div>
+                    <div className="scheme-title">头像—气泡几何锁定</div>
                     <div className="scheme-desc">
-                      绕过 html2canvas 的中文字体基线计算，让浏览器先按真实页面完成排版，再整体生成 PNG；<strong>不是把文字上移</strong>，是本次最有针对性的修复。
+                      单行气泡固定为与头像等高并让文字在内部居中；多行气泡与头像保持同一上缘，只向下增长。<strong>不移动整个气泡</strong>，使用稳定的 Canvas 输出。
                     </div>
                     <button
                       type="button"
@@ -1934,34 +1932,34 @@ export default function App() {
                         (!includeHeader && !includeMessages && !includeAnalysis) ||
                         (includeMessages && screenshotMessages.length === 0)
                       }
-                      onClick={() => handleGenerateScreenshot("svg-dom")}
+                      onClick={() => handleGenerateScreenshot("layout-lock")}
                     >
-                      {screenshotGenerating && screenshotEngine === "svg-dom" ? (
-                        <>⏳ 正在用 DOM/SVG 生成长图...</>
+                      {screenshotGenerating && screenshotEngine === "layout-lock" ? (
+                        <>⏳ 正在生成几何锁定长图...</>
                       ) : (
                         <>
-                          <Camera size={16} /> 生成【方案 2：vivo DOM/SVG】
+                          <Camera size={16} /> 生成【方案 2：vivo 几何锁定】
                         </>
                       )}
                     </button>
                   </div>
 
-                  {/* 方案 3: html2canvas 自带的 foreignObject 路线 */}
+                  {/* 方案 3: 固定中文行盒与字体度量 */}
                   <div className="screenshot-scheme-card">
                     <div className="scheme-badge-row">
-                      <span className="scheme-tag optional">方案 3（浏览器 DOM 渲染）</span>
+                      <span className="scheme-tag optional">方案 3（字体度量归一化）</span>
                     </div>
-                    <div className="scheme-title">html2canvas ForeignObject 引擎</div>
+                    <div className="scheme-title">固定中文行盒高度</div>
                     <div className="scheme-desc">
-                      让 html2canvas 借助浏览器的 DOM/SVG 排版能力生成图片，是方案 2 的兼容型替代实现，同样不手动移动文字。
+                      统一气泡、头像和分析标签的字体族、字号与整数行高，减少 vivo 字体 ascent/descent 小数取整造成的下沉；同样输出完整 PNG。
                     </div>
                     <button
                       type="button"
                       className="secondary screenshot-generate-btn"
                       disabled={screenshotGenerating || (!includeHeader && !includeMessages && !includeAnalysis) || (includeMessages && screenshotMessages.length === 0)}
-                      onClick={() => handleGenerateScreenshot("foreign-object")}
+                      onClick={() => handleGenerateScreenshot("font-metrics")}
                     >
-                      {screenshotGenerating && screenshotEngine === "foreign-object" ? <>⏳ 正在生成浏览器 DOM 长图...</> : <><Camera size={16} /> 生成【方案 3：ForeignObject】</>}
+                      {screenshotGenerating && screenshotEngine === "font-metrics" ? <>⏳ 正在生成字体度量长图...</> : <><Camera size={16} /> 生成【方案 3：固定字体行盒】</>}
                     </button>
                   </div>
 

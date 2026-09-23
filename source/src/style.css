@@ -2463,10 +2463,13 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
 
 /* 微信气泡：紧贴文字、自然扩展、消除无谓留白与截断 */
 .screenshot-render-target .bubble {
-  padding: 6px 11px 10px;
+  display: grid;
+  align-items: center;
+  min-height: 36px;
+  padding: 6px 11px;
   border-radius: 4px;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 22px;
   color: #181818;
   position: relative;
   white-space: pre-wrap;
@@ -2488,7 +2491,7 @@ html[data-dialog-keyboard="open"] .import-modal .primary {
   content: "";
   position: absolute;
   left: -4px;
-  top: 12px;
+  top: 14px;
   width: 8px;
   height: 8px;
   background: inherit;
