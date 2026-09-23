@@ -48,7 +48,7 @@ import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";
 import { conversationCharms } from "./charms";
 
-const SCREENSHOT_VERSION = "v1.5.0-vivo-calibrated";
+const SCREENSHOT_VERSION = "v2.0.0-multi-solutions";
 const DRAFT_KEY = "crush-monitor-mobile-draft-v1";
 const TONE_CHIPS = ["🙂", "😂", "🥹", "🙈", "🤔", "👍", "收到", "好呀", "哈哈", "晚点回"];
 
@@ -283,6 +283,7 @@ export default function App() {
   const [screenshotGenerating, setScreenshotGenerating] = useState(false);
   const [screenshotDataUrl, setScreenshotDataUrl] = useState<string | null>(null);
   const [isScrollMode, setIsScrollMode] = useState(false);
+  const [screenshotModeType, setScreenshotModeType] = useState<"card" | "chat">("card");
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const screenshotContainerRef = useRef<HTMLDivElement>(null);
   const [overlap, setOverlap] = useState<Message[] | null>(null),
@@ -1815,42 +1816,59 @@ export default function App() {
                   </div>
                 )}
 
-                <button
-                  type="button"
-                  className="primary screenshot-generate-btn"
-                  style={{ background: "#07c160", border: "none", color: "#fff", fontWeight: "bold" }}
-                  disabled={
-                    (!includeHeader && !includeMessages && !includeAnalysis) ||
-                    (includeMessages && screenshotMessages.length === 0)
-                  }
-                  onClick={() => {
-                    setDetail(null);
-                    setIsScrollMode(true);
-                  }}
-                >
-                  📱 开启全屏纯净模式（支持手机系统长截屏/滚动截屏）
-                </button>
-                <div style={{ textAlign: "center", margin: "6px 0", fontSize: "11px", color: "#888" }}>
-                  或者使用浏览器 Canvas 合成下载：
+                <div className="screenshot-scheme-container">
+                  <div className="screenshot-scheme-header">请选择最适合您手机的导出方案：</div>
+                  
+                  {/* 方案 A: 网页自动帮您生成完整图片（无需任何手机滚动截屏，vivo等机型专治） */}
+                  <div className="screenshot-scheme-card active-scheme">
+                    <div className="scheme-tag">⭐ 首选推荐 · 无需手机支持长截屏</div>
+                    <div className="scheme-title">方案一：直接生成高清长图文件</div>
+                    <div className="scheme-desc">
+                      网页自动将所选对话合成一张完整的超清 PNG 长图。生成后直接长按图片或点击按钮即可保存到手机相册，<strong>任何手机、任何浏览器均可直接保存</strong>。
+                    </div>
+                    <button
+                      type="button"
+                      className="primary screenshot-generate-btn"
+                      disabled={
+                        screenshotGenerating ||
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={handleGenerateScreenshot}
+                    >
+                      {screenshotGenerating ? (
+                        <>⏳ 正在为您高清合成长图中...</>
+                      ) : (
+                        <>
+                          <Camera size={16} /> 立即一键生成长图（长按即可保存）
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* 方案 B: 原生全屏长网页（手机自带长截屏/滚动截屏专用） */}
+                  <div className="screenshot-scheme-card">
+                    <div className="scheme-tag optional">备选 · 适合自带滚动截屏的手机（如三星/小米/华为等）</div>
+                    <div className="scheme-title">方案二：全屏长页面模式（系统滚动截屏）</div>
+                    <div className="scheme-desc">
+                      展开为无弹窗干扰的纯净长页面。手机按下截屏键后，若您的手机系统弹出<strong>【滚动截屏】/【长截屏】</strong>按钮，系统会自动滚屏截取整页。
+                    </div>
+                    <button
+                      type="button"
+                      className="secondary screenshot-generate-btn"
+                      disabled={
+                        (!includeHeader && !includeMessages && !includeAnalysis) ||
+                        (includeMessages && screenshotMessages.length === 0)
+                      }
+                      onClick={() => {
+                        setDetail(null);
+                        setIsScrollMode(true);
+                      }}
+                    >
+                      📱 进入全屏长页面（尝试手机系统截屏）
+                    </button>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  className="secondary screenshot-generate-btn"
-                  disabled={
-                    screenshotGenerating ||
-                    (!includeHeader && !includeMessages && !includeAnalysis) ||
-                    (includeMessages && screenshotMessages.length === 0)
-                  }
-                  onClick={handleGenerateScreenshot}
-                >
-                  {screenshotGenerating ? (
-                    <>⏳ 正在高清合成长图中...</>
-                  ) : (
-                    <>
-                      <Camera size={16} /> 生成普通长图文件并保存
-                    </>
-                  )}
-                </button>
               </div>
             )
           ) : detail === "sparks" ? (
