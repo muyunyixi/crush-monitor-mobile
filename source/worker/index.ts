@@ -1,5 +1,6 @@
 import { APIError } from "@typesafe-ai/sdk";
 import { analyze, requestSchema } from "../server/analysis";
+import { handleMiniOcr } from "./mini-ocr";
 
 type DurableStorage = {
   get<T>(key: string): Promise<T | undefined>;
@@ -14,6 +15,8 @@ type DurableNamespace = {
 export type WorkerEnv = {
   ALLOWED_ORIGIN: string;
   TYPESAFE_API_KEY?: string;
+  WECHAT_APP_ID?: string;
+  WECHAT_APP_SECRET?: string;
   USAGE_LIMITER?: DurableNamespace;
 };
 type UsageRecord = { date: string; runIds: string[] };
@@ -52,6 +55,17 @@ export class UsageLimiter {
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function reserveMiniOcr(env: WorkerEnv, openid: string) {
+  if (!env.USAGE_LIMITER) return { allowed: false, unavailable: true };
+  const userHash = await sha256(openid);
+  const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`miniocr:${userHash}`));
+  const response = await stub.fetch(new Request("https://usage.internal/reserve", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ date: new Date().toISOString().slice(0, 10), runId: crypto.randomUUID() }),
+  }));
+  return { allowed: response.ok, unavailable: response.status >= 500 };
 }
 
 async function reserveFreeUse(request: Request, env: WorkerEnv, runId: string) {
@@ -93,6 +107,11 @@ function json(body: unknown, status: number, headers: Record<string, string>) {
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+    const url = new URL(request.url);
+    // Mini Program requests have no browser Origin. A one-time wx.login code is
+    // verified against our AppID before the OCR API is called.
+    if (request.method === "POST" && url.pathname === "/api/mini/ocr")
+      return handleMiniOcr(request, env, (openid) => reserveMiniOcr(env, openid));
     const origin = request.headers.get("Origin");
     const allowedOrigins = (env.ALLOWED_ORIGIN || "").split(",").map((value) => value.trim()).filter(Boolean);
     if (!origin || !allowedOrigins.includes(origin))
@@ -106,7 +125,6 @@ export default {
       "Cache-Control": "no-store",
       "Content-Type": "application/json",
     };
-    const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/health")
       return json({ ok: true, service: "crush-monitor-api", freeDailyLimit: FREE_DAILY_LIMIT }, 200, headers);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers });
