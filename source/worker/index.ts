@@ -108,6 +108,10 @@ function json(body: unknown, status: number, headers: Record<string, string>) {
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
+    // Diagnostic only: verify that wx.uploadFile reaches this Worker. Do not
+    // read, store or forward the uploaded image; no OCR quota is consumed.
+    if (request.method === "POST" && url.pathname === "/api/mini/upload-check")
+      return Response.json({ ok: true, stage: "worker-reached" }, { headers: { "Cache-Control": "no-store" } });
     // Mini Program requests have no browser Origin. A one-time wx.login code is
     // verified against our AppID before the OCR API is called.
     if (request.method === "POST" && url.pathname === "/api/mini/ocr")
