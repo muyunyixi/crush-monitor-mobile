@@ -3,7 +3,7 @@ export type MiniOcrEnv = {
   WECHAT_APP_SECRET?: string;
 };
 
-type WechatResult = { errcode?: number; errmsg?: string; access_token?: string; expires_in?: number; openid?: string; items?: Array<{ text?: string }> };
+type WechatResult = { errcode?: number; errmsg?: string; access_token?: string; expires_in?: number; openid?: string; items?: Array<{ text?: string; itemcoord?: { x?: number; y?: number; width?: number; height?: number } }> };
 
 let tokenCache: { token: string; expires: number } | undefined;
 
@@ -31,8 +31,8 @@ async function getToken(appid: string, secret: string) {
 
 /** A single image per request, sent as multipart from wx.uploadFile. */
 export async function handleMiniOcr(request: Request, env: MiniOcrEnv, reserve: (openid: string) => Promise<{ allowed: boolean; unavailable?: boolean }>): Promise<Response> {
-  if (!env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET)
-    return failure('微信识字尚未配置：需要在 Worker Secret 中设置小程序 AppSecret。', 503);
+  if (!env.WECHAT_APP_ID) return failure('微信识字尚未配置：Worker 缺少 WECHAT_APP_ID。', 503);
+  if (!env.WECHAT_APP_SECRET) return failure('微信识字尚未配置：Worker 缺少 WECHAT_APP_SECRET。', 503);
   if (!request.headers.get('Content-Type')?.toLowerCase().startsWith('multipart/form-data'))
     return failure('请上传图片文件。', 400);
   const length = Number(request.headers.get('Content-Length') || 0);
@@ -75,8 +75,12 @@ export async function handleMiniOcr(request: Request, env: MiniOcrEnv, reserve: 
       if ([48001, 40164].includes(result.errcode)) return failure('微信未开放此识字接口，或接口 IP 白名单未配置。', 502);
       return failure(`微信识字暂时失败（错误码 ${result.errcode}）。`, 502);
     }
-    const lines = (result.items || []).map(item => (item.text || '').trim()).filter(Boolean);
-    return Response.json({ lines, text: lines.join('\n') }, { headers: { 'Cache-Control': 'no-store' } });
+    const items = (result.items || []).map(item => ({
+      text: (item.text || '').trim(),
+      itemcoord: item.itemcoord && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(item.itemcoord?.[key as keyof typeof item.itemcoord]))
+        ? item.itemcoord : undefined,
+    })).filter(item => item.text);
+    return Response.json({ items, lines: items.map(item => item.text), text: items.map(item => item.text).join('\n') }, { headers: { 'Cache-Control': 'no-store' } });
   } catch {
     return failure('无法连接微信识字服务，请稍后重试。', 502);
   }
