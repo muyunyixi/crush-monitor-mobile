@@ -41,3 +41,19 @@ test('OCR checks one-time login, quota and returns text without sending credenti
     globalThis.fetch = original;
   }
 });
+
+test('OCR upstream errors identify their stage without exposing credentials', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('private upstream details'); };
+  try {
+    const response = await handleMiniOcr(request('valid-code'), {
+      WECHAT_APP_ID: 'wx-test', WECHAT_APP_SECRET: 'private-value',
+    }, async () => ({ allowed: true }));
+    const body = await response.text();
+    assert.equal(response.status, 502);
+    assert.match(body, /login\/UNKNOWN/);
+    assert.doesNotMatch(body, /private-value|private upstream details/);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
