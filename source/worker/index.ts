@@ -5,6 +5,8 @@ import { handleMiniOcr } from "./mini-ocr";
 type DurableStorage = {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
+  delete?(key: string): Promise<boolean>;
+  setAlarm?(scheduledTime: number): Promise<void>;
 };
 type DurableState = { storage: DurableStorage };
 type DurableStub = { fetch(request: Request): Promise<Response> };
@@ -20,18 +22,41 @@ export type WorkerEnv = {
   USAGE_LIMITER?: DurableNamespace;
 };
 type UsageRecord = { date: string; runIds: string[] };
+type OcrJob = { expires: number; done: boolean; status?: number; body?: unknown };
 
 const FREE_DAILY_LIMIT = 10;
 
 export class UsageLimiter {
   constructor(private state: DurableState) {}
 
+  async alarm() { await this.state.storage.delete?.("ocrJob"); }
+
   async fetch(request: Request): Promise<Response> {
-    const { date, runId, action } = (await request.json()) as {
+    const { date, runId, action, jobStatus, jobBody } = (await request.json()) as {
       date?: string;
       runId?: string;
       action?: string;
+      jobStatus?: number;
+      jobBody?: unknown;
     };
+    if (action === "ocr-start") {
+      if (!this.state.storage.setAlarm) return Response.json({ error: "OCR job alarms unavailable" }, { status: 503 });
+      await this.state.storage.put("ocrJob", { expires: Date.now() + 10 * 60_000, done: false } satisfies OcrJob);
+      await this.state.storage.setAlarm(Date.now() + 10 * 60_000);
+      return Response.json({ ok: true });
+    }
+    if (action === "ocr-finish") {
+      const job = await this.state.storage.get<OcrJob>("ocrJob");
+      if (!job || job.expires < Date.now()) return Response.json({ error: "expired" }, { status: 410 });
+      await this.state.storage.put("ocrJob", { ...job, done: true, status: jobStatus, body: jobBody } satisfies OcrJob);
+      return Response.json({ ok: true });
+    }
+    if (action === "ocr-result") {
+      const job = await this.state.storage.get<OcrJob>("ocrJob");
+      if (!job || job.expires < Date.now()) return Response.json({ error: "识字结果已过期，请重新上传。" }, { status: 410 });
+      return Response.json(job.done ? { done: true, status: job.status, result: job.body } : { done: false },
+        { headers: { "Cache-Control": "no-store" } });
+    }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || ""))
       return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
 
@@ -105,13 +130,51 @@ function json(body: unknown, status: number, headers: Record<string, string>) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+function jobRequest(action: string, extra: Record<string, unknown> = {}) {
+  return new Request("https://usage.internal/ocr-job", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...extra }) });
+}
+
 export default {
-  async fetch(request: Request, env: WorkerEnv): Promise<Response> {
+  async fetch(request: Request, env: WorkerEnv, context?: { waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
     const url = new URL(request.url);
     // Diagnostic only: verify that wx.uploadFile reaches this Worker. Do not
     // read, store or forward the uploaded image; no OCR quota is consumed.
     if (request.method === "POST" && url.pathname === "/api/mini/upload-check")
       return Response.json({ ok: true, stage: "worker-reached" }, { headers: { "Cache-Control": "no-store" } });
+    if (request.method === "POST" && url.pathname === "/api/mini/ocr-async") {
+      if (!env.USAGE_LIMITER || !context) return Response.json({ error: "异步识字服务尚未部署。" }, { status: 503 });
+      const size = Number(request.headers.get("Content-Length") || 0);
+      if (size > 4 * 1024 * 1024 + 10_000) return Response.json({ error: "图片超过 4 MB。" }, { status: 413 });
+      let form: FormData;
+      try { form = await request.formData(); } catch { return Response.json({ error: "上传格式错误。" }, { status: 400 }); }
+      const image = form.get("image");
+      if (!(image instanceof File) || image.size > 4 * 1024 * 1024 || image.size < 8)
+        return Response.json({ error: "请选择小于 4 MB 的截图。" }, { status: 400 });
+      const jobId = crypto.randomUUID();
+      const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`miniocrjob:${jobId}`));
+      const initialized = await stub.fetch(jobRequest("ocr-start"));
+      if (!initialized.ok) return Response.json({ error: "无法创建识字任务。" }, { status: 503 });
+      const prepared = new Request(request.url, { method: "POST", body: form });
+      context.waitUntil((async () => {
+        let status = 502;
+        let body: unknown = { error: "识字服务暂时不可用。" };
+        try {
+          const result = await handleMiniOcr(prepared, env, openid => reserveMiniOcr(env, openid));
+          status = result.status;
+          body = await result.json();
+        } catch { /* Public result contains no internal error details or credentials. */ }
+        await stub.fetch(jobRequest("ocr-finish", { jobStatus: status, jobBody: body }));
+      })());
+      return Response.json({ jobId }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (request.method === "GET" && url.pathname === "/api/mini/ocr-job") {
+      const jobId = url.searchParams.get("id") || "";
+      if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(jobId)) return Response.json({}, { status: 400 });
+      if (!env.USAGE_LIMITER) return Response.json({}, { status: 503 });
+      const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`miniocrjob:${jobId}`));
+      return stub.fetch(jobRequest("ocr-result"));
+    }
     // Mini Program requests have no browser Origin. A one-time wx.login code is
     // verified against our AppID before the OCR API is called.
     if (request.method === "POST" && url.pathname === "/api/mini/ocr")
