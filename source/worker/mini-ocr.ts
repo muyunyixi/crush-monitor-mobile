@@ -3,12 +3,36 @@ export type MiniOcrEnv = {
   WECHAT_APP_SECRET?: string;
 };
 
-type WechatResult = { errcode?: number; errmsg?: string; access_token?: string; expires_in?: number; openid?: string; items?: Array<{ text?: string; itemcoord?: { x?: number; y?: number; width?: number; height?: number } }> };
+type Point = { x?: number; y?: number };
+type WechatResult = {
+  errcode?: number;
+  errmsg?: string;
+  access_token?: string;
+  expires_in?: number;
+  openid?: string;
+  items?: Array<{
+    text?: string;
+    itemcoord?: { x?: number; y?: number; width?: number; height?: number };
+    pos?: { left_top?: Point; right_top?: Point; right_bottom?: Point; left_bottom?: Point };
+  }>;
+};
 
 let tokenCache: { token: string; expires: number } | undefined;
 
 function failure(error: string, status: number) {
   return Response.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
+}
+
+function itemBox(item: NonNullable<WechatResult['items']>[number]) {
+  const rectangle = item.itemcoord;
+  if (rectangle && [rectangle.x, rectangle.y, rectangle.width, rectangle.height].every(Number.isFinite))
+    return { x: rectangle.x!, y: rectangle.y!, width: rectangle.width!, height: rectangle.height! };
+  // WeChat's current comm OCR response uses a four-corner `pos` polygon.
+  const points = item.pos && [item.pos.left_top, item.pos.right_top, item.pos.right_bottom, item.pos.left_bottom];
+  if (!points || points.some(point => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return undefined;
+  const xs = points.map(point => point!.x!);
+  const ys = points.map(point => point!.y!);
+  return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
 }
 
 async function wechatJson(url: string, options?: RequestInit): Promise<WechatResult> {
@@ -82,8 +106,7 @@ export async function handleMiniOcr(request: Request, env: MiniOcrEnv, reserve: 
     stage = 'response';
     const items = (result.items || []).map(item => ({
       text: (item.text || '').trim(),
-      itemcoord: item.itemcoord && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(item.itemcoord?.[key as keyof typeof item.itemcoord]))
-        ? item.itemcoord : undefined,
+      itemcoord: itemBox(item),
     })).filter(item => item.text);
     return Response.json({ items, lines: items.map(item => item.text), text: items.map(item => item.text).join('\n') }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
