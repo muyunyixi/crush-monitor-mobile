@@ -31,3 +31,12 @@ test('OCR result can be restored after a restart without the temporary image fil
  try{await page.finishTask(task);assert.match(page.state.conversations[0].draft,/我：你好/);assert.equal(page.state.conversations[0].tasks.length,0);}
  finally{api.poll=oldPoll;}
 });
+test('a pasted group chat stays in the draft until the two speakers are selected',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{}};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ page.onDraft({detail:{value:'小明：你好\n小红：你好\n小李：大家好'}});
+ assert.equal(await page.archiveDraft(),false);
+ assert.equal(page.state.conversations[0].messages.length,0);
+ assert.match(page.state.conversations[0].draft,/小李/);
+});

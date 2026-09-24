@@ -46,6 +46,8 @@ Page({
   async archiveDraft() {
     const c=store.active(this.state), parsed=parseChat(c.draft); if (!parsed.length) return true;
     if(parsed.some(p=>p.speaker==='未分配'||p.speaker==='待确认')) { this.setData({status:'有待确认的发言人。请在文字前写“我：”或“对方：”后再分析。'}); return false; }
+    const named=new Set(parsed.map(p=>p.speaker).filter(name=>name!=='我'&&name!=='对方'));
+    if(named.size>1) {this.setData({status:'这段记录有多位具名发言人。请先在草稿里将参与分析的两位标成“我”和“对方”，其他消息暂不导入。'});return false;}
     const batchId=store.uid(); const incoming=parsed.map(p=>messageFromParsed(p,c.id,batchId,'paste'));
     let added=findNewMessages(c.messages,incoming);
     // A single repeated short phrase cannot be safely distinguished from an overlap.
@@ -157,10 +159,10 @@ Page({
         if(!current||current.revision!==revision)throw new Error('记录已修改，本轮旧结果不会覆盖新版本。');
         if(result.overview)overview=result.overview;
         (result.lines||[]).forEach(line=>{ lines[line.id]=line; });
-        this.commit(store.update(this.state,id,x=>({ ...x,analysis:{revision,overview,lines:{...lines},scopeIds:messages.map(m=>m.id),stale:true,createdAt:Date.now()} })));
+        if(!this.commit(store.update(this.state,id,x=>({ ...x,analysis:{revision,overview,lines:{...lines},scopeIds:messages.map(m=>m.id),stale:true,createdAt:Date.now()} }))))throw new Error('本机保存失败；分析结果没有归档，请检查本机空间。');
         this.setData({status:`正在分析：${i+1} / ${jobs.length} 组…`});
       }
-      this.commit(store.update(this.state,id,x=>({ ...x,analysis:{revision,overview,lines,scopeIds:messages.map(m=>m.id),stale:false,createdAt:Date.now()} })));
+      if(!this.commit(store.update(this.state,id,x=>({ ...x,analysis:{revision,overview,lines,scopeIds:messages.map(m=>m.id),stale:false,createdAt:Date.now()} }))))throw new Error('本机保存失败；分析结果没有归档，请检查本机空间。');
       this.setData({status:'分析完成；点数值或消息标签查看依据。'});
     }catch(error){this.setData({status:error.message||'分析失败，请稍后重试。'});}finally{this.setData({busy:false});}
   },
