@@ -144,11 +144,16 @@ export default {
       return Response.json({ ok: true, stage: "worker-reached" }, { headers: { "Cache-Control": "no-store" } });
     if (request.method === "POST" && url.pathname === "/api/mini/ocr-async") {
       if (!env.USAGE_LIMITER || !context) return Response.json({ error: "异步识字服务尚未部署。" }, { status: 503 });
+      if (!env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET)
+        return Response.json({ error: "微信识字服务尚未配置 AppID 或 AppSecret。" }, { status: 503 });
       const size = Number(request.headers.get("Content-Length") || 0);
       if (size > 4 * 1024 * 1024 + 10_000) return Response.json({ error: "图片超过 4 MB。" }, { status: 413 });
       let form: FormData;
       try { form = await request.formData(); } catch { return Response.json({ error: "上传格式错误。" }, { status: 400 }); }
       const image = form.get("image");
+      const loginCode = form.get("loginCode");
+      if (typeof loginCode !== "string" || !/^[\w-]{5,256}$/.test(loginCode))
+        return Response.json({ error: "小程序登录信息缺失。" }, { status: 401 });
       if (!(image instanceof File) || image.size > 4 * 1024 * 1024 || image.size < 8)
         return Response.json({ error: "请选择小于 4 MB 的截图。" }, { status: 400 });
       const jobId = crypto.randomUUID();
