@@ -10,7 +10,10 @@ test('asynchronous OCR upload returns promptly, then exposes the completed resul
     if (url.includes('jscode2session')) return Response.json({ openid: 'openid-1' });
     if (url.includes('cgi-bin/token')) return Response.json({ access_token: 'access-1', expires_in: 7200 });
     if (url.includes('cv/ocr/comm')) return Response.json({ errcode: 0,
-      items: [{ text: '你好', itemcoord: { x: 30, y: 200, width: 80, height: 20 } }] });
+      items: [{ text: '你好', pos: {
+        left_top: { x: 30, y: 200 }, right_top: { x: 110, y: 200 },
+        right_bottom: { x: 110, y: 220 }, left_bottom: { x: 30, y: 220 },
+      } }] });
     throw new Error('Unexpected upstream URL');
   };
   try {
@@ -50,5 +53,6 @@ test('asynchronous OCR upload returns promptly, then exposes the completed resul
     assert.equal(job.done, true);
     assert.equal(job.status, 200);
     assert.equal(job.result.items[0].itemcoord.x, 30);
+    assert.deepEqual(job.result.items[0].itemcoord, { x: 30, y: 200, width: 80, height: 20 });
   } finally { globalThis.fetch = original; }
 });
