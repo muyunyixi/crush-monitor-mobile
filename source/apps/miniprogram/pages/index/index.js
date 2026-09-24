@@ -3,7 +3,7 @@ const { parseChat, findNewMessages } = require('./parser');
 const { parseScreenshot } = require('./screenshot-parser');
 const api = require('../../services/api');
 const { detect } = require('../../domain/charms');
-const { score, GRADE, top, validate, quality } = require('../../domain/analysis');
+const { score, GRADE, top, validate, quality, selectScope } = require('../../domain/analysis');
 const exporter = require('../../services/export');
 const relations = [{ key:'new', label:'刚认识' },{ key:'crush', label:'Crush / 暧昧中' },{ key:'couple', label:'恋爱中' }];
 const delay = ms => new Promise(resolve => setTimeout(resolve,ms));
@@ -23,6 +23,7 @@ function display(state, page = 'chat') {
     action:c.analysis?.overview?.action || '分析后查看', analysisStatus:c.analysis?.stale?'有新增待分析':c.analysis?'已分析':'还未分析',
     charms, muted:state.muted, reduceMotion:state.reduceMotion, hasDraft:!!c.draft.trim(), hasMessages:!!c.messages.length,
     canAnalyze:!c.analysis || c.analysis.stale || !!c.draft.trim(), scopeNote:c.analysis?.scopeIds?.length?`本次分析 ${c.analysis.scopeIds.length} 条记录`:'' ,
+    scopeLabel:c.analysisScope?.mode==='custom'?`第 ${c.analysisScope.start}–${c.analysisScope.end} 条`:`最近 ${c.analysisScope?.count||120} 条`,
     tasks:c.tasks || [], detail:null, busy:false, status:'', exportMode:'standard', includeChat:true, includeAnalysis:true, anonymous:true };
 }
 function messageFromParsed(p, conversationId, batchId, source) {
@@ -35,12 +36,16 @@ Page({
   onShow() { if (this.state) this.resumeTasks(); },
   onHide() { if (this.state) this.flush(); },
   flush() { try { store.save(this.state); return true; } catch { this.setData({ status:'本机保存失败，请保留当前页面并腾出空间。' }); return false; } },
-  render(page=this.data.page) { const previous={ busy:this.data.busy, status:this.data.status, detail:this.data.detail, exportMode:this.data.exportMode, includeChat:this.data.includeChat, includeAnalysis:this.data.includeAnalysis, anonymous:this.data.anonymous };
+  render(page=this.data.page) { const previous={ busy:this.data.busy, status:this.data.status, detail:this.data.detail, exportMode:this.data.exportMode, includeChat:this.data.includeChat, includeAnalysis:this.data.includeAnalysis, anonymous:this.data.anonymous, historyTop:this.data.historyTop||0, scrollTo:this.data.scrollTo||'', showReturnAnchor:!!this.data.showReturnAnchor, highlightId:this.data.highlightId||'' };
     this.setData({ ...display(this.state,page), ...previous }); },
   commit(next, page) { try { store.save(next); this.state=next; this.render(page); return true; } catch { this.setData({status:'本机保存失败，内容仍留在输入框；请腾出空间后重试。'}); return false; } },
-  openList() { this.render('list'); },
-  openConversation(e) { this.commit({ ...this.state, activeId:e.currentTarget.dataset.id },'chat'); },
-  newConversation() { const c=store.conversation(); this.commit({ ...this.state, activeId:c.id, conversations:[c,...this.state.conversations] },'chat'); },
+  clearAnchor() { this.detailOrigin=null;this.historyScrollTop=0;clearTimeout(this.highlightTimer);this.setData({historyTop:0,scrollTo:'',showReturnAnchor:false,highlightId:''}); },
+  openList() { this.clearAnchor();this.render('list'); },
+  openConversation(e) { this.clearAnchor();this.commit({ ...this.state, activeId:e.currentTarget.dataset.id },'chat'); },
+  newConversation() { this.clearAnchor();const c=store.conversation(); this.commit({ ...this.state, activeId:c.id, conversations:[c,...this.state.conversations] },'chat'); },
+  onHistoryScroll(e) { this.historyScrollTop=e.detail.scrollTop; },
+  rememberOrigin() { if(!this.detailOrigin||this.detailOrigin.conversationId!==this.state.activeId)
+    this.detailOrigin={conversationId:this.state.activeId,top:this.historyScrollTop||0}; },
   onDraft(e) { const id=this.state.activeId; this.state=store.update(this.state,id,c=>({ ...c,draft:e.detail.value })); this.setData({draft:e.detail.value,hasDraft:!!e.detail.value.trim()}); clearTimeout(this.saveTimer); this.saveTimer=setTimeout(()=>this.flush(),500); },
   onDraftBlur() { this.flush(); },
   async archiveDraft() {
@@ -73,7 +78,20 @@ Page({
   deleteConversation() { const id=this.state.activeId; wx.showModal({title:'删除聊天对象',content:'将删除此对象的草稿、记录、分析和识字任务，无法撤销。',success:r=>{if(!r.confirm)return; let conversations=this.state.conversations.filter(c=>c.id!==id); if(!conversations.length)conversations=[store.conversation()]; this.commit({ ...this.state,conversations,activeId:conversations[0].id },'list');}}); },
   onMute(e) { this.commit({ ...this.state,muted:e.detail.value }); },
   onMotion(e) { this.commit({ ...this.state,reduceMotion:e.detail.value }); },
-  onMessageTap(e) { const c=store.active(this.state), id=e.currentTarget.dataset.id, m=c.messages.find(x=>x.id===id); if(!m)return;
+  chooseAnalysisScope() { if(this.data.busy)return;
+    const c=store.active(this.state);
+    wx.showActionSheet({itemList:['最近 20 条','最近 50 条','最近 120 条','自选起止消息'],success:r=>{
+      if(r.tapIndex<3){const count=[20,50,120][r.tapIndex];this.commit(store.update(this.state,c.id,x=>({ ...x,analysisScope:{mode:'recent',count},analysis:null })));return;}
+      wx.showModal({title:`共 ${c.messages.length} 条，选择起止序号`,content:'',editable:true,placeholderText:'例如 2-15，最多 120 条',success:choice=>{
+        if(!choice.confirm)return;
+        const match=/^\s*(\d+)\s*[-–—]\s*(\d+)\s*$/.exec(choice.content||'');
+        const start=Number(match?.[1]),end=Number(match?.[2]);
+        if(!match||start<1||end>c.messages.length||end<start||end-start>=120){this.setData({status:'请填写有效的起止序号，一次最多 120 条。'});return;}
+        this.commit(store.update(this.state,c.id,x=>({ ...x,analysisScope:{mode:'custom',start,end},analysis:null })));
+      }});
+    }});
+  },
+  onMessageTap(e) { const c=store.active(this.state), id=e.currentTarget.dataset.id, m=c.messages.find(x=>x.id===id); if(!m)return;this.rememberOrigin();
     const line=c.analysis?.lines?.[id]; this.setData({ detail:{ kind:'message', id, text:m.text, title:m.speakerName, score:score(line?.score?.value), grade:score(line?.score?.value)!==null?GRADE(score(line.score.value)):'', emotions:top(line?.emotions),intents:top(line?.intents), evidenceId:id } }); this.render('detail'); },
   onMessageLong(e) { const id=e.currentTarget.dataset.id; wx.showActionSheet({itemList:['编辑正文','调整发言人','拆分消息','与下一条合并','删除此条'],success:r=>{
     if(r.tapIndex===0) this.editMessage(id); if(r.tapIndex===1)this.toggleSender(id);
@@ -99,10 +117,20 @@ Page({
     wx.showModal({title:'编辑消息',editable:true,placeholderText:'消息正文',content:m.text,success:r=>{if(r.confirm&&r.content?.trim())this.commit(store.update(this.state,c.id,x=>({ ...store.changeMessages(x,x.messages.map(v=>v.id===id?{ ...v,text:r.content.trim() }:v)),analysis:null })));}}); },
   toggleSender(id) { const c=store.active(this.state);wx.showActionSheet({itemList:['我','对方'],success:r=>{const sender=r.tapIndex===0?'self':'other';this.commit(store.update(this.state,c.id,x=>({ ...store.changeMessages(x,x.messages.map(m=>m.id===id?{ ...m,sender,speakerName:sender==='self'?'我':'对方' }:m)),analysis:null })));}}); },
   removeMessage(id) { const c=store.active(this.state);wx.showModal({title:'删除此条消息',content:'相关分析将失效。',success:r=>{if(r.confirm)this.commit(store.update(this.state,c.id,x=>({ ...store.changeMessages(x,x.messages.filter(m=>m.id!==id)),analysis:null })));}}); },
-  showOverview() { const c=store.active(this.state),o=c.analysis?.overview;this.setData({detail:{kind:'overview',title:'好感信号',text:'根据这段聊天的文字线索评分，不代表对方真实想法或喜欢你的概率。',evidenceId:o?.evidenceId,actionEvidenceId:o?.actionEvidenceId,action:o?.action||'',value:score(o?.affinity?.value),status:o?.affinity?.status||'' }});this.render('detail'); },
-  showCharm(e) { const c=store.active(this.state),event=detect(c.messages).find(x=>x.key===e.currentTarget.dataset.key);if(!event)return;this.setData({detail:{kind:'charm',title:event.label,text:'这段聊天出现了对应话题。点击序号定位原句。',evidenceIds:event.evidenceIds,evidenceIndex:0,evidenceId:event.evidenceIds[0]}});this.render('detail'); },
+  showOverview() { this.rememberOrigin();const c=store.active(this.state),o=c.analysis?.overview;this.setData({detail:{kind:'overview',title:'好感信号',text:'根据这段聊天的文字线索评分，不代表对方真实想法或喜欢你的概率。',evidenceId:o?.evidenceId,actionEvidenceId:o?.actionEvidenceId,action:o?.action||'',value:score(o?.affinity?.value),status:o?.affinity?.status||'' }});this.render('detail'); },
+  showCharm(e) { const c=store.active(this.state),event=detect(c.messages).find(x=>x.key===e.currentTarget.dataset.key);if(!event)return;this.rememberOrigin();this.setData({detail:{kind:'charm',title:event.label,text:'这段聊天出现了对应话题。点击序号定位原句。',evidenceIds:event.evidenceIds,evidenceIndex:0,evidenceId:event.evidenceIds[0]}});this.render('detail'); },
   nextEvidence() {const d=this.data.detail;if(!d?.evidenceIds?.length)return;const evidenceIndex=(d.evidenceIndex+1)%d.evidenceIds.length;this.setData({detail:{...d,evidenceIndex,evidenceId:d.evidenceIds[evidenceIndex]}});},
-  jumpEvidence() { const id=this.data.detail?.evidenceId;this.render('chat');if(id)this.setData({scrollTo:`msg-${id}`,highlightId:id}); },
+  closeDetail() { this.returnToOrigin(); },
+  returnToOrigin() { const top=this.detailOrigin?.conversationId===this.state.activeId?this.detailOrigin.top:0;
+    this.detailOrigin=null;clearTimeout(this.highlightTimer);this.render('chat');
+    this.setData({scrollTo:'',historyTop:top,showReturnAnchor:false,highlightId:''});this.historyScrollTop=top;
+  },
+  jumpEvidence() { const id=this.data.detail?.evidenceId,c=store.active(this.state);
+    if(!id||!c.messages.some(m=>m.id===id)){this.setData({status:'原句已不在当前记录中。'});this.returnToOrigin();return;}
+    this.rememberOrigin();this.render('chat');this.setData({scrollTo:'',historyTop:-1,showReturnAnchor:true,highlightId:id});
+    const jump=()=>this.setData({scrollTo:`msg-${id}`});if(wx.nextTick)wx.nextTick(jump);else jump();
+    clearTimeout(this.highlightTimer);this.highlightTimer=setTimeout(()=>this.setData({highlightId:''}),1500);
+  },
   async chooseScreenshot() {
     if(this.data.busy)return;
     let files;try{const result=await new Promise((resolve,reject)=>wx.chooseMedia({count:4,mediaType:['image'],sourceType:['album'],success:resolve,fail:reject}));files=result.tempFiles||[];}catch{return;}
@@ -139,11 +167,12 @@ Page({
   async runAnalysis() {
     if(this.data.busy)return;if(!await this.archiveDraft())return;
     const c=store.active(this.state), id=c.id, revision=c.revision;
-    if(c.messages.some(m=>m.sender==='unknown')){this.setData({status:'有待确认的发言人。长按对应消息，选择“调整发言人”。'});return;}
     if(c.analysis&&!c.analysis.stale){this.setData({status:'已分析当前记录。新增消息后可以继续分析。'});return;}
-    const messages=c.messages.filter(m=>m.sender!=='unknown').slice(-120).map(m=>({id:m.id,sender:m.sender,text:m.text,timestamp:m.timestamp||null,kind:m.kind||'text'}));
+    let messages;
+    try{messages=selectScope(c.messages,c.analysisScope).map(m=>({id:m.id,sender:m.sender,text:m.text,timestamp:m.timestamp||null,kind:m.kind||'text'}));}
+    catch(error){this.setData({status:error.message});return;}
     if(!messages.length){this.setData({status:'请先添加可识别发言人的聊天记录。'});return;}
-    if(messages.reduce((n,m)=>n+Array.from(m.text).length,0)>24000){this.setData({status:'最近 120 条仍超过 24000 字；请缩小记录范围。'});return;}
+    if(messages.some(m=>m.sender==='unknown')){this.setData({status:'所选范围有待确认的发言人。长按对应消息，选择“调整发言人”。'});return;}
     this.setData({busy:true,status:'正在分析好感信号…'});
     const base={revision,relation:c.relation,messages};const lines={...(c.analysis?.lines||{})};let overview,contextHash;
     const jobs=[{task:'overview',targetIds:[]}];

@@ -40,3 +40,15 @@ test('a pasted group chat stays in the draft until the two speakers are selected
  assert.equal(page.state.conversations[0].messages.length,0);
  assert.match(page.state.conversations[0].draft,/小李/);
 });
+test('selected analysis range is saved and an evidence jump can return to the previous position',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:options=>options.success({confirm:true,content:'1-2'}),showActionSheet:options=>options.success({tapIndex:3}),nextTick:fn=>fn()};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();page.openConversation({currentTarget:{dataset:{id:page.state.activeId}}});
+ page.onDraft({detail:{value:'我：第一句\n对方：第二句'}});await page.archiveDraft();page.chooseAnalysisScope();
+ assert.deepEqual(page.state.conversations[0].analysisScope,{mode:'custom',start:1,end:2});
+ page.onHistoryScroll({detail:{scrollTop:345}});const id=page.state.conversations[0].messages[0].id;
+ page.onMessageTap({currentTarget:{dataset:{id}}});assert.equal(page.data.page,'detail');
+ page.closeDetail();assert.equal(page.data.historyTop,345);assert.equal(page.data.showReturnAnchor,false);
+ page.onMessageTap({currentTarget:{dataset:{id}}});page.jumpEvidence();assert.equal(page.data.scrollTo,`msg-${id}`);assert.equal(page.data.showReturnAnchor,true);
+ page.returnToOrigin();assert.equal(page.data.historyTop,345);assert.equal(page.data.scrollTo,'');assert.equal(page.data.showReturnAnchor,false);
+});

@@ -35,6 +35,8 @@ button { box-sizing:border-box; }
 .charm-strip { white-space:nowrap; overflow-x:auto; padding:12rpx 0 2rpx; }
 .charm { display:inline-block; margin-right:10rpx; padding:6rpx 16rpx; border-radius:20rpx; background:#edf3ee; color:#557364; font-size:22rpx; }
 .editor { width:100%; min-height:86rpx; max-height:260rpx; padding:16rpx; margin-top:12rpx; box-sizing:border-box; border:1rpx solid #dce8df; border-radius:16rpx; background:#fafcfa; font-size:28rpx; line-height:1.45; }
+.scope-button,.return-anchor { min-height:88rpx; width:100%; margin:8rpx 0 0; padding:0 12rpx; text-align:left; background:transparent; color:#3d7565; font-size:25rpx; line-height:88rpx; }
+.return-anchor { background:#edf3ee; border-radius:14rpx; margin:0 0 8rpx; }
 .actions { display:flex; gap:14rpx; margin-top:12rpx; }
 .primary,.secondary { margin:0; border-radius:16rpx; font-size:27rpx; min-height:88rpx; line-height:88rpx; padding:0 22rpx; }
 .primary { color:#fff; background:#477f73; flex:1; }

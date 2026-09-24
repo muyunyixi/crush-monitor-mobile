@@ -20,4 +20,22 @@ function quality(messages, lines) {
   const values = messages.filter(m => m.sender === 'self').map(m => score(lines[m.id]?.score?.value)).filter(n => n !== null);
   return { value: values.length ? Math.round(values.reduce((a,b) => a+b, 0) / values.length) : null, count: values.length };
 }
-module.exports = { GRADE, score, top, validate, quality };
+function selectScope(messages, scope = {mode:'recent',count:120}) {
+  const list = Array.isArray(messages) ? messages : [];
+  scope = scope || {mode:'recent',count:120};
+  let selected;
+  if(scope.mode === 'custom') {
+    const {start,end} = scope;
+    if(!Number.isInteger(start)||!Number.isInteger(end)||start<1||end<start||end>list.length)
+      throw new Error('所选分析范围已失效，请重新选择。');
+    selected=list.slice(start-1,end);
+  } else {
+    const count=[20,50,120].includes(scope.count)?scope.count:120;
+    selected=list.slice(-count);
+  }
+  if(selected.length>120)throw new Error('一次最多分析 120 条，请缩小范围。');
+  if(selected.reduce((n,m)=>n+Array.from(m.text||'').length,0)>24000)
+    throw new Error('所选范围超过 24000 字，请点“分析范围”缩小范围。');
+  return selected;
+}
+module.exports = { GRADE, score, top, validate, quality, selectScope };
