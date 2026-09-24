@@ -54,5 +54,18 @@ test('asynchronous OCR upload returns promptly, then exposes the completed resul
     assert.equal(job.status, 200);
     assert.equal(job.result.items[0].itemcoord.x, 30);
     assert.deepEqual(job.result.items[0].itemcoord, { x: 30, y: 200, width: 80, height: 20 });
+
+    const newForm = new FormData();
+    newForm.append('loginCode', 'another-code');
+    newForm.append('taskVersion', '2');
+    newForm.append('image', new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])], 'chat.png'));
+    const newer = await worker.fetch(new Request('https://example.com/api/mini/ocr-async', {
+      method: 'POST', body: newForm,
+    }), env, { waitUntil: promise => { tasks.push(promise); } });
+    const { jobId: newerId, jobToken } = await newer.json() as { jobId: string; jobToken: string };
+    await Promise.all(tasks);
+    const address = `https://example.com/api/mini/ocr-job?id=${newerId}`;
+    assert.equal((await worker.fetch(new Request(address), env)).status, 403);
+    assert.equal((await worker.fetch(new Request(address, { headers: { 'X-Ocr-Task-Token': jobToken } }), env)).status, 200);
   } finally { globalThis.fetch = original; }
 });
