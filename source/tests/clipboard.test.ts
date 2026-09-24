@@ -6,7 +6,7 @@ import {
   readClipboardData,
   readClipboardPaste,
   readClipboardText,
-} from "../src/clipboard";
+} from "../apps/web/src/clipboard";
 
 test("手机剪贴板的多个文本项会完整合并", async () => {
   const text = await readClipboardText({

@@ -1,0 +1,9 @@
+{
+  "description": "微信多条聊天记录原生粘贴可行性验证",
+  "miniprogramRoot": "./",
+  "projectname": "crush-monitor-miniprogram",
+  "appid": "wx02136730d16cd9fc",
+  "compileType": "miniprogram",
+  "setting": { "es6": true, "enhance": true, "postcss": true, "minified": true },
+  "libVersion": "3.8.10"
+}

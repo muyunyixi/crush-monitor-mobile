@@ -1,0 +1,21 @@
+name: Check mini program
+
+on:
+  push:
+    paths:
+      - 'source/apps/miniprogram/**'
+      - '.github/workflows/miniprogram.yml'
+  pull_request:
+    paths:
+      - 'source/apps/miniprogram/**'
+      - '.github/workflows/miniprogram.yml'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test source/apps/miniprogram/tests/*.test.js

@@ -7,7 +7,8 @@
     "dev": "concurrently -k -n api,web \"tsx watch server/index.ts\" \"vite --host 127.0.0.1\"",
     "build": "tsc --noEmit && vite build && node scripts/inline-build.mjs && node scripts/copy-ocr.mjs",
     "start": "tsx server/index.ts",
-    "test": "tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts && npm run test:mini",
+    "test:mini": "node --test apps/miniprogram/tests/*.test.js",
     "check:live": "tsx scripts/check-live.ts",
     "setup": "node scripts/setup.mjs",
     "export:source": "node scripts/export-source.mjs"

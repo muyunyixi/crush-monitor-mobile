@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { conversationCharms } from "../src/charms";
+import { conversationCharms } from "../apps/web/src/charms";
 import type { Message } from "../shared/types";
 
 const messages = (pairs: Array<["self" | "other", string]>): Message[] =>

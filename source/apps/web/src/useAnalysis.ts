@@ -15,7 +15,7 @@ import {
   type Overview,
   type LineResult,
   type AnalysisRequest,
-} from "../shared/types";
+} from "../../../shared/types";
 export function useAnalysis() {
   const [overview, setOverview] = useState<Overview | null>(null),
     [overviewFresh, setOverviewFresh] = useState(false),

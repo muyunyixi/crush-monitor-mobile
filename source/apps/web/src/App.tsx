@@ -1,7 +1,7 @@
 import { connection } from "./connection";
-import { INTENTS, topIntents } from "../shared/intents";
-import { REPLY_RATINGS, replyRating } from "../shared/ratings";
-import { EMOTIONS, topEmotions } from "../shared/labels";
+import { INTENTS, topIntents } from "../../../shared/intents";
+import { REPLY_RATINGS, replyRating } from "../../../shared/ratings";
+import { EMOTIONS, topEmotions } from "../../../shared/labels";
 import {
   useEffect,
   useRef,
@@ -31,7 +31,7 @@ import {
   mergeMessages,
   withinScope,
   recentScope,
-} from "../shared/parser";
+} from "../../../shared/parser";
 import {
   ACTIONS,
   RELATIONS,
@@ -41,8 +41,8 @@ import {
   type Message,
   type Relation,
   type Parsed,
-} from "../shared/types";
-import { exampleText } from "../shared/fixtures";
+} from "../../../shared/types";
+import { exampleText } from "../../../shared/fixtures";
 import { useAnalysis } from "./useAnalysis";
 import { normalizeClipboardText } from "./clipboard";
 import { recognizeScreenshots } from "./ocr";

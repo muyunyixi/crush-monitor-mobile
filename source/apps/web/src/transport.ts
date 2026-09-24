@@ -1,4 +1,4 @@
-import type { AnalysisRequest, AnalysisResponse } from '../shared/types';
+import type { AnalysisRequest, AnalysisResponse } from '../../../shared/types';
 export type ConnectionConfig = { key: string; endpoint: string };
 export function validateConnection(config: ConnectionConfig) {
   if (!config.endpoint.trim()) throw new Error('分析服务尚未连接。请在右上角设置中填写转发服务地址；TypeSafe 不支持网页直连。');
