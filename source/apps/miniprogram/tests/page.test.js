@@ -1,6 +1,6 @@
 const test=require('node:test');const assert=require('node:assert/strict');
 test('switching objects retains separate drafts, and appending touches only the original object',async()=>{
- const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{},showToast:()=>{}};
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:options=>options.success({confirm:true,content:'新对象'}),showToast:()=>{}};
  global.Page=definition=>{global.pageDefinition=definition;};
  const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
  const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};
@@ -88,4 +88,82 @@ test('empty OCR output stays retryable and never erases the current draft',async
   assert.match(page.data.status,/没有识别出聊天文字/);assert.equal(page.data.failedScreenshotCount,1);
   assert.equal(page.state.conversations[0].draft,'我：已有校对文字');assert.equal(page.state.conversations[0].tasks.length,0);
  }finally{Object.assign(api,old);}
+});
+test('clear pasted text archives on blur but OCR draft waits for review',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{}};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ page.onDraft({detail:{value:'我：已经校对\n对方：收到'}});await page.onDraftBlur();
+ assert.equal(page.state.conversations[0].messages.length,2);assert.equal(page.state.conversations[0].draft,'');
+ page.state.conversations[0].draftKind='ocr';page.onDraft({detail:{value:'待确认：可能是聊天'}});
+ await page.onDraftBlur();assert.equal(page.state.conversations[0].messages.length,2);
+ assert.match(page.state.conversations[0].draft,/待确认/);
+});
+test('OCR review preserves edits across reopening and archives only after speaker confirmation',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{}};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ page.state.conversations[0].draft='待确认：第一条\n对方：第二条';page.state.conversations[0].draftKind='ocr';page.flush();
+ page.openDraftReview();assert.equal(page.data.page,'review');assert.equal(page.data.reviewItems[0].speaker,'待确认');
+ page.onReviewSpeaker({currentTarget:{dataset:{index:0}},detail:{value:0}});
+ page.onReviewText({currentTarget:{dataset:{index:0}},detail:{value:'第一条已修正\n正文引用：仍属于同一条'}});page.closeDraftReview();
+ page.openDraftReview();assert.equal(page.data.reviewItems[0].text,'第一条已修正\n正文引用：仍属于同一条');
+ await page.saveDraftReview();assert.equal(page.data.page,'chat');
+ assert.equal(page.state.conversations[0].messages[0].sender,'self');assert.equal(page.state.conversations[0].messages[0].source,'ocr');
+ assert.equal(page.state.conversations[0].messages[0].text,'第一条已修正\n正文引用：仍属于同一条');assert.equal(page.state.conversations[0].draft,'');
+});
+test('changing relationship reruns previous line analysis and stale requests cannot overwrite an edit',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{}};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ const c=page.state.conversations[0];c.messages=[{id:'a',sender:'self',speakerName:'我',text:'看书吗',timestamp:null},{id:'b',sender:'other',speakerName:'对方',text:'好呀',timestamp:null}];
+ c.analysis={revision:0,lines:{a:{score:{value:80}},b:{emotions:{开心:1}}},overview:{affinity:{value:70}},scopeIds:['a','b'],reuseLines:true,stale:false};
+ page.onRelation({detail:{value:'1'}});const api=require('../services/api'),old=api.analyze,tasks=[];
+ api.analyze=async job=>{tasks.push(job.task);return {revision:job.revision,contextHash:'same-context',model:'test-model',rubricVersion:'test-rubric',
+  overview:job.task==='overview'?{affinity:{value:70}}:undefined,lines:job.targetIds.map(id=>({id,score:{value:70}}))};};
+ try{await page.runAnalysis();assert.deepEqual(tasks,['overview','other_messages','self_message']);assert.equal(c.analysis.reuseLines,true);
+  assert.equal(page.state.conversations[0].analysis.stale,false);
+  let release;api.analyze=()=>new Promise(resolve=>{release=resolve;});
+  page.state.conversations[0].analysis.stale=true;page.state.conversations[0].analysis.reuseLines=false;
+  const pending=page.runAnalysis();await new Promise(resolve=>setTimeout(resolve,0));
+  page.commit(require('../storage/store').update(page.state,c.id,x=>require('../storage/store').changeMessages(x,[{...x.messages[0],text:'改过的文字'},x.messages[1]])));
+  release({revision:page.state.conversations[0].revision-1,contextHash:'old',overview:{affinity:{value:33}}});await pending;
+  assert.equal(page.state.conversations[0].analysis.overview.affinity.value,70);
+  assert.match(page.data.status,/记录已修改/);
+ }finally{api.analyze=old;}
+});
+test('reviewing two screenshots keeps separate import batches so undo removes only the final image',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:options=>options.success({confirm:true})};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ const c=page.state.conversations[0],api=require('../services/api'),old=api.poll;
+ api.poll=async task=>({items:[{text:task.batchId,itemcoord:{x:270,y:210,width:70,height:22}}]});
+ try{
+  for(const batchId of ['第一张','第二张']){
+   const task={jobId:batchId,conversationId:c.id,batchId,imageIndex:batchId==='第一张'?0:1,width:375,height:800,createdAt:Date.now()};
+   page.state.conversations[0].tasks.push(task);await page.finishTask(task);
+  }
+  page.openDraftReview();await page.saveDraftReview();
+  assert.deepEqual(page.state.conversations[0].batches.map(b=>b.imageOrder),[0,1]);
+  assert.equal(page.state.conversations[0].messages.length,2);
+  page.undoLastBatch();assert.equal(page.state.conversations[0].messages.length,1);
+  assert.equal(page.state.conversations[0].messages[0].text,'第一张');
+ }finally{api.poll=old;}
+});
+test('a later OCR result preserves edits already made in the review screen',async()=>{
+ const data=new Map();global.wx={getStorageSync:k=>data.get(k),setStorageSync:(k,v)=>data.set(k,structuredClone(v)),showModal:()=>{}};
+ global.Page=definition=>{global.pageDefinition=definition;};const path=require.resolve('../pages/index/index');delete require.cache[path];require(path);
+ const page={...global.pageDefinition,setData(values){this.data={...this.data,...values};}};page.onLoad();
+ const c=page.state.conversations[0],api=require('../services/api'),old=api.poll;
+ api.poll=async task=>({items:[{text:task.batchId,itemcoord:{x:270,y:210,width:70,height:22}}]});
+ try{
+  const first={jobId:'one',conversationId:c.id,batchId:'第一张',imageIndex:0,width:375,height:800,createdAt:Date.now()};
+  const second={...first,jobId:'two',batchId:'第二张',imageIndex:1};
+  page.state.conversations[0].tasks=[first,second];await page.finishTask(first);
+  page.openDraftReview();page.onReviewText({currentTarget:{dataset:{index:0}},detail:{value:'人工修正的内容'}});
+  await page.finishTask(second);
+  assert.deepEqual(page.data.reviewItems.map(m=>m.text),['人工修正的内容','第二张']);
+  await page.saveDraftReview();assert.deepEqual(page.state.conversations[0].messages.map(m=>m.text),['人工修正的内容','第二张']);
+  assert.deepEqual(page.state.conversations[0].batches.map(b=>b.imageOrder),[0,1]);
+ }finally{api.poll=old;}
 });

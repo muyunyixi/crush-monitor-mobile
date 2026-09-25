@@ -4,7 +4,7 @@ const OLD_DRAFT = 'paste_probe_draft_v1';
 const { normalizeSaved } = require('../pages/index/parser');
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 function conversation(title = '新的对话') {
-  return { id: uid(), title, relation: 'new', messages: [], batches: [], draft: '', analysis: null, tasks: [], revision: 0, schemaVersion: 3, updatedAt: Date.now() };
+  return { id: uid(), title, relation: 'new', messages: [], batches: [], draft: '', draftKind:'paste', analysis: null, tasks: [], revision: 0, schemaVersion: 3, updatedAt: Date.now() };
 }
 function migrate(legacy) {
   if (legacy && Array.isArray(legacy.chats) && legacy.chats.length) {
@@ -27,5 +27,12 @@ function load() {
 function save(state) { wx.setStorageSync(KEY, { ...state, schemaVersion: 3 }); }
 function active(state) { return state.conversations.find(c => c.id === state.activeId) || state.conversations[0]; }
 function update(state, id, fn) { return { ...state, conversations: state.conversations.map(c => c.id === id ? fn(c) : c) }; }
-function changeMessages(c, messages) { return { ...c, messages, revision: c.revision + 1, analysis: c.analysis ? { ...c.analysis, stale: true } : null, updatedAt: Date.now() }; }
+function changeMessages(c, messages) {
+  const appendOnly=messages.length>c.messages.length&&c.messages.every((m,i)=>{
+    const next=messages[i];return next&&m.id===next.id&&m.sender===next.sender&&m.text===next.text&&m.timestamp===next.timestamp;
+  });
+  return { ...c, messages, revision: c.revision + 1,
+    analysis: c.analysis ? { ...c.analysis, stale: true, reuseLines:appendOnly&&c.analysis.reuseLines!==false } : null,
+    updatedAt: Date.now() };
+}
 module.exports = { uid, conversation, load, save, active, update, changeMessages };

@@ -147,6 +147,26 @@ export default {
     // read, store or forward the uploaded image; no OCR quota is consumed.
     if (request.method === "POST" && url.pathname === "/api/mini/upload-check")
       return Response.json({ ok: true, stage: "worker-reached" }, { headers: { "Cache-Control": "no-store" } });
+    if (request.method === "POST" && url.pathname === "/api/mini/quota") {
+      const limit = Number(env.MINI_ANALYSIS_DAILY_LIMIT);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !env.USAGE_LIMITER || !env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET || !env.TYPESAFE_API_KEY)
+        return Response.json({ error: "小程序分析服务尚未配置。" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+      let loginCode: unknown;
+      try { loginCode = (await request.json() as {loginCode?:unknown}).loginCode; }
+      catch { return Response.json({ error: "请求格式错误。" }, { status: 400 }); }
+      if (typeof loginCode !== 'string' || !/^[\w-]{5,256}$/.test(loginCode)) return Response.json({ error: "小程序登录信息缺失。" }, { status: 401 });
+      let openid: string | null;
+      try { openid = await verifyMiniLogin(loginCode, env); }
+      catch { return Response.json({ error: "微信身份验证暂时失败。" }, { status: 502 }); }
+      if (!openid) return Response.json({ error: "小程序登录已过期，请重试。" }, { status: 401 });
+      const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`minianalysis:${await sha256(openid)}`));
+      const date = new Date().toISOString().slice(0, 10);
+      const response = await stub.fetch(new Request("https://usage.internal/status", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, action: "status", limit }) }));
+      if (!response.ok) return Response.json({ error: "次数服务暂时不可用。" }, { status: 503 });
+      const data = await response.json() as {remaining?:number};
+      return Response.json({remaining:Math.max(0,Number(data.remaining)||0),limit,date}, {headers:{"Cache-Control":"no-store"}});
+    }
     if (request.method === "POST" && url.pathname === "/api/mini/analyze") {
       const miniLimit = Number(env.MINI_ANALYSIS_DAILY_LIMIT);
       if (!Number.isInteger(miniLimit) || miniLimit < 1 || miniLimit > 100)

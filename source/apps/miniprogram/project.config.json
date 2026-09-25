@@ -1,5 +1,5 @@
 {
-  "description": "微信多条聊天记录原生粘贴可行性验证",
+  "description": "好感监控器原生微信小程序",
   "miniprogramRoot": "./",
   "projectname": "crush-monitor-miniprogram",
   "appid": "wx02136730d16cd9fc",

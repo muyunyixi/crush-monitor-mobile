@@ -2,7 +2,8 @@
   <view wx:if="{{page === 'list'}}" class="screen">
     <view class="screen-head"><view><view class="eyebrow">好感监控器</view><view class="heading">聊天对象</view></view><button class="text-button" bindtap="newConversation">＋ 新建</button></view>
     <view class="intro">按对象保存聊天记录。分析只解读文字线索，不代表任何人的真实想法。</view>
-    <view wx:for="{{conversations}}" wx:key="id" class="conversation" data-id="{{item.id}}" bindtap="openConversation"><view class="conversation-title">{{item.title}}</view><view class="conversation-summary">{{item.summary}}</view><view class="conversation-count">{{item.count}} 条记录　›</view></view>
+    <button wx:if="{{canCreateExample}}" class="example-button" bindtap="createExample">先看看独立示例对话　›</button>
+    <view wx:for="{{conversations}}" wx:key="id" class="conversation" data-id="{{item.id}}" bindtap="openConversation"><view class="conversation-title">{{item.title}}<text wx:if="{{item.example}}" class="example-tag">示例</text></view><view class="conversation-summary">{{item.summary}}</view><view class="conversation-count">{{item.count}} 条记录 · {{item.updatedLabel}}　›</view></view>
   </view>
 
   <view wx:if="{{page === 'chat'}}" class="chat-screen">
@@ -15,20 +16,38 @@
     </scroll-view>
     <view class="composer">
       <button wx:if="{{showReturnAnchor}}" class="return-anchor" bindtap="returnToOrigin">‹ 返回原位置</button>
-      <view class="summary" bindtap="showOverview"><view class="summary-item"><text>好感信号</text><text class="number">{{affinity}}</text><text class="unit">/100</text></view><view class="summary-item"><text>我的发挥</text><text class="number">{{quality}}</text><text class="unit">{{qualityCount}} 条</text></view><view class="summary-action">下一步 · {{action}}　›</view></view>
-      <view wx:if="{{charms.length}}" class="charm-strip"><text wx:for="{{charms}}" wx:key="key" class="charm" data-key="{{item.key}}" bindtap="showCharm">{{item.label}}</text></view>
-      <textarea class="editor" value="{{draft}}" bindinput="onDraft" bindblur="onDraftBlur" placeholder="长按粘贴多条聊天，或识字后在这里校对角色与正文" maxlength="-1" auto-height="true" cursor-spacing="20" />
+      <view wx:if="{{!keyboardOpen && compactSummary}}" class="summary-compact" bindtap="showOverview">好感信号 {{affinity}} /100 · 我的发挥 {{quality}}　›</view>
+      <view wx:if="{{!keyboardOpen && !compactSummary}}" class="summary" bindtap="showOverview"><view class="summary-item"><text>好感信号</text><text class="number">{{affinity}}</text><text class="unit">/100</text></view><view class="summary-item"><text>我的发挥</text><text class="number">{{quality}}</text><text class="unit">{{qualityCount}} 条</text></view><view class="summary-action">下一步 · {{action}}　›</view></view>
+      <view wx:if="{{!keyboardOpen && charms.length}}" class="charm-strip"><button wx:for="{{charmPreview}}" wx:key="key" class="charm" data-key="{{item.key}}" bindtap="showCharm">{{item.label}}</button><button wx:if="{{moreCharms}}" class="charm" bindtap="showCharmList">还有 {{moreCharms}} 个细节　›</button></view>
+      <textarea class="editor" value="{{draft}}" bindinput="onDraft" bindfocus="onEditorFocus" bindblur="onDraftBlur" placeholder="长按粘贴多条聊天，或识字后在这里校对角色与正文" maxlength="-1" auto-height="true" cursor-spacing="20" />
       <view wx:if="{{hasDraft}}" class="review-hint">请逐条核对发言人和消息边界。待确认的行改成“我：”或“对方：”；分析前会先导入校对后的文字。</view>
+      <button wx:if="{{hasDraft}}" class="scope-button" bindtap="openDraftReview">逐条校对发言人、时间与消息　›</button>
       <button class="scope-button" disabled="{{busy}}" bindtap="chooseAnalysisScope">分析范围 · {{scopeLabel}}　›</button>
       <view class="actions"><button class="secondary" disabled="{{busy}}" bindtap="chooseScreenshot">截图识字</button><button class="primary" loading="{{busy}}" disabled="{{busy || !canAnalyze}}" bindtap="runAnalysis">{{canAnalyze ? '分析新增' : '已分析'}}</button></view>
       <button wx:if="{{tasks.length}}" class="task-retry" bindtap="retryTaskQuery">继续查询未完成的识字任务（{{tasks.length}}）</button>
       <button wx:if="{{failedScreenshotCount}}" class="task-retry" disabled="{{busy}}" bindtap="retryFailedScreenshots">重试失败截图（{{failedScreenshotCount}}）</button>
       <view class="save-state">{{hasDraft ? '草稿自动保存在本机' : analysisStatus}}　{{scopeNote}}</view>
+      <view wx:if="{{quotaNote && !keyboardOpen}}" class="save-state">{{quotaNote}}</view>
+      <view wx:if="{{!keyboardOpen}}" class="data-notice">截图经服务转交微信识字；点击分析后，所选聊天文字经服务转交模型分析。记录默认仅保存在本机。</view>
       <view wx:if="{{status}}" class="status">{{status}}</view>
     </view>
   </view>
 
-  <view wx:if="{{page === 'detail'}}" class="screen"><view class="screen-head"><button class="nav" bindtap="closeDetail">‹</button><view class="heading">{{detail.title}}</view></view><view class="detail-card"><view wx:if="{{detail.value !== null && detail.value !== undefined}}" class="detail-value">{{detail.value}}<text class="unit"> /100</text></view><view wx:if="{{detail.grade}}" class="detail-grade">{{detail.grade}}</view><view class="detail-copy">{{detail.text}}</view><view wx:if="{{detail.action}}" class="detail-copy">下一步：{{detail.action}}</view><view wx:for="{{detail.emotions}}" wx:key="name" class="detail-line">情绪 · {{item.name}} {{item.percent}}</view><view wx:for="{{detail.intents}}" wx:key="name" class="detail-line">意图 · {{item.name}} {{item.percent}}</view><button wx:if="{{detail.evidenceIds.length > 1}}" class="secondary" bindtap="nextEvidence">证据 {{detail.evidenceIndex + 1}} / {{detail.evidenceIds.length}} · 下一条</button><button wx:if="{{detail.evidenceId}}" class="secondary" bindtap="jumpEvidence">定位原句</button><view wx:else class="hint">目前没有可定位的证据</view></view></view>
+  <view wx:if="{{page === 'review'}}" class="screen review-screen">
+    <view class="screen-head"><button class="nav" bindtap="closeDraftReview">‹</button><view class="heading">逐条校对</view></view>
+    <view class="hint">改动保存在本机草稿。确认发言人和消息边界后归档，再决定是否分析。</view>
+    <view wx:for="{{reviewItems}}" wx:key="reviewId" class="review-card">
+      <view class="review-head"><text>第 {{index + 1}} 条<text wx:if="{{item.source === 'ocr'}}"> · 第 {{item.imageOrder + 1}} 张图</text></text><button class="review-action" data-index="{{index}}" bindtap="onReviewAction">拆分 / 合并 / 移除　›</button></view>
+      <view wx:if="{{item.originalSpeaker && item.originalSpeaker !== item.speaker}}" class="review-hint">识别到：{{item.originalSpeaker}}</view>
+      <picker range="{{reviewSpeakers}}" data-index="{{index}}" bindchange="onReviewSpeaker"><view class="review-picker">发言人 · {{item.speaker}}　›</view></picker>
+      <input class="review-time" value="{{item.timestamp}}" data-index="{{index}}" bindinput="onReviewTime" placeholder="时间（可留空）" maxlength="80" />
+      <textarea class="review-text" value="{{item.text}}" data-index="{{index}}" bindinput="onReviewText" auto-height="true" maxlength="-1" placeholder="消息正文" />
+    </view>
+    <button class="primary" bindtap="saveDraftReview">完成校对并归档</button>
+    <view wx:if="{{status}}" class="status">{{status}}</view>
+  </view>
+
+  <view wx:if="{{page === 'detail'}}" class="screen"><view class="screen-head"><button class="nav" bindtap="closeDetail">‹</button><view class="heading" bindlongpress="onCharmDetailLong">{{detail.title}}</view></view><view class="detail-card"><view wx:if="{{detail.value !== null && detail.value !== undefined}}" class="detail-value">{{detail.value}}<text class="unit"> /100</text></view><view wx:if="{{detail.grade}}" class="detail-grade">{{detail.grade}}</view><view class="detail-copy">{{detail.text}}</view><view wx:if="{{detail.punctuationMoment}}" class="punctuation-moment">（⌣）</view><view wx:if="{{detail.phrase}}" class="detail-hint">共同短语：{{detail.phrase}}</view><button wx:if="{{detail.followupKey}}" class="secondary detail-extra" bindtap="confirmCharmFollowup">确认两句是同一活动</button><button wx:for="{{detail.events}}" wx:key="key" class="setting-row" data-key="{{item.key}}" bindtap="showCharm">{{item.label}}　›</button><view wx:if="{{detail.stale}}" class="detail-warning">记录已修改，以下为旧结果，请重新分析。</view><view wx:if="{{detail.status === 'ambiguous' || detail.status === 'insufficient'}}" class="detail-hint">上下文较少，解读可能不确定。</view><view wx:if="{{detail.action}}" class="detail-copy">下一步：{{detail.action}}</view><view wx:for="{{detail.emotions}}" wx:key="name" class="detail-line">情绪 · {{item.name}} {{item.percent}}</view><view wx:for="{{detail.intents}}" wx:key="name" class="detail-line">意图 · {{item.name}} {{item.percent}}</view><button wx:if="{{detail.evidenceIds.length > 1}}" class="secondary" bindtap="nextEvidence">证据 {{detail.evidenceIndex + 1}} / {{detail.evidenceIds.length}} · 下一条</button><button wx:if="{{detail.evidenceId}}" class="secondary" bindtap="jumpEvidence">定位原句</button><view wx:else class="hint">目前没有可定位的证据</view><button wx:if="{{detail.actionEvidenceId && detail.actionEvidenceId !== detail.evidenceId}}" class="secondary detail-extra" bindtap="jumpActionEvidence">定位下一步依据</button><button wx:if="{{detail.canReanalyze}}" class="text-button detail-extra" bindtap="reAnalyze">重新分析（可能消耗额度）</button></view></view>
 
   <view wx:if="{{page === 'settings'}}" class="screen"><view class="screen-head"><button class="nav" bindtap="openList">‹</button><view class="heading">对象设置</view></view><view class="setting-card"><view class="field-label">对象名称</view><input class="field" value="{{title}}" bindinput="onTitle" maxlength="40" /><button class="secondary" bindtap="saveTitle">保存名称</button><view class="field-label">关系状态（只作为分析上下文）</view><picker range="{{relations}}" range-key="label" bindchange="onRelation"><view class="field">{{relation}}　›</view></picker></view><view class="setting-card"><button class="setting-row" bindtap="openExport">保存长图　›</button><view class="setting-row">关闭彩蛋 <switch checked="{{muted}}" bindchange="onMute" color="#477f73" /></view><view class="setting-row">减少动效 <switch checked="{{reduceMotion}}" bindchange="onMotion" color="#477f73" /></view><button class="setting-row" bindtap="undoLastBatch">撤销最近一次导入</button><button class="setting-row" bindtap="clearDraft">清空输入草稿</button><button class="setting-row danger" bindtap="clearRecords">清空聊天记录</button><button class="setting-row danger" bindtap="deleteConversation">删除聊天对象</button></view><button class="secondary" bindtap="openConversation" data-id="{{activeId}}">返回聊天</button></view>
 

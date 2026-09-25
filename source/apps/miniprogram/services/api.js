@@ -21,4 +21,5 @@ async function poll(task) {
   throw new Error('任务仍在处理。稍后打开小程序将继续查询。');
 }
 async function analyze(job, runId) { return request('/api/mini/analyze', { method: 'POST', header: { 'Content-Type': 'application/json' }, data: { job, runId, loginCode: await login() } }); }
-module.exports = { BASE, login, request, upload, poll, analyze };
+async function quota() { return request('/api/mini/quota', { method:'POST', header:{'Content-Type':'application/json'}, data:{loginCode:await login()} }); }
+module.exports = { BASE, login, request, upload, poll, analyze, quota };

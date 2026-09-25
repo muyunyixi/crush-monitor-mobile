@@ -55,12 +55,18 @@ function equal(a, b) {
   return a.speaker === b.speaker && a.text === b.text && (!a.timestamp || !b.timestamp || a.timestamp === b.timestamp);
 }
 
-function findNewMessages(existing, incoming) {
-  if (existing.length <= incoming.length && existing.every((message, i) => equal(message, incoming[i]))) return incoming.slice(existing.length);
+function importOverlap(existing, incoming) {
+  let overlap = 0;
+  if (existing.length <= incoming.length && existing.every((message, i) => equal(message, incoming[i]))) overlap = existing.length;
   for (let overlap = Math.min(existing.length, incoming.length); overlap > 0; overlap--) {
-    if (existing.slice(-overlap).every((message, i) => equal(message, incoming[i]))) return incoming.slice(overlap);
+    if (existing.slice(-overlap).every((message, i) => equal(message, incoming[i]))) {
+      const matched=incoming.slice(0,overlap);
+      return {messages:incoming.slice(overlap),overlap,weak:overlap===1&&!matched[0].timestamp};
+    }
   }
-  return incoming;
+  const matched=incoming.slice(0,overlap);
+  return {messages:incoming.slice(overlap),overlap,weak:overlap===1&&!matched[0]?.timestamp};
 }
+function findNewMessages(existing,incoming) {return importOverlap(existing,incoming).messages;}
 
-module.exports = { parseChat, normalizeSaved, findNewMessages };
+module.exports = { parseChat, normalizeSaved, findNewMessages, importOverlap };
