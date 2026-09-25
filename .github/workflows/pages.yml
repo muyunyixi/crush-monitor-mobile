@@ -59,6 +59,11 @@ jobs:
           curl --fail --silent --show-error \
             -H "Origin: https://muyunyixi.github.io" \
             "$WORKER_ENDPOINT/health"
+      - name: Verify web and mini program API contracts
+        env:
+          WEB_WORKER_ENDPOINT: ${{ vars.PUBLIC_WORKER_URL || steps.deploy.outputs.deployment-url }}
+          MINI_WORKER_ENDPOINT: https://crush-monitor-mobile-api.muyunyixi.cloud
+        run: node source/scripts/verify-worker.mjs "$WEB_WORKER_ENDPOINT" "$MINI_WORKER_ENDPOINT"
       - name: Build with deployed Worker endpoint
         env:
           VITE_ANALYSIS_ENDPOINT: ${{ vars.PUBLIC_WORKER_URL || steps.deploy.outputs.deployment-url }}
