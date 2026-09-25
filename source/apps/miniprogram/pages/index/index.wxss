@@ -35,6 +35,7 @@ button { box-sizing:border-box; }
 .charm-strip { white-space:nowrap; overflow-x:auto; padding:12rpx 0 2rpx; }
 .charm { display:inline-block; margin-right:10rpx; padding:6rpx 16rpx; border-radius:20rpx; background:#edf3ee; color:#557364; font-size:22rpx; }
 .editor { width:100%; min-height:86rpx; max-height:260rpx; padding:16rpx; margin-top:12rpx; box-sizing:border-box; border:1rpx solid #dce8df; border-radius:16rpx; background:#fafcfa; font-size:28rpx; line-height:1.45; }
+.review-hint { color:#677b70; font-size:22rpx; line-height:1.5; margin-top:8rpx; }
 .scope-button,.return-anchor { min-height:88rpx; width:100%; margin:8rpx 0 0; padding:0 12rpx; text-align:left; background:transparent; color:#3d7565; font-size:25rpx; line-height:88rpx; }
 .return-anchor { background:#edf3ee; border-radius:14rpx; margin:0 0 8rpx; }
 .actions { display:flex; gap:14rpx; margin-top:12rpx; }
@@ -42,7 +43,7 @@ button { box-sizing:border-box; }
 .primary { color:#fff; background:#477f73; flex:1; }
 .secondary { color:#336d5d; background:#e8f2ec; }
 .save-state { color:#849189; font-size:22rpx; margin-top:8rpx; }
-.task-retry { color:#3d7565; background:transparent; font-size:23rpx; margin:8rpx 0 0; padding:0; text-align:left; }
+.task-retry { color:#3d7565; background:transparent; font-size:23rpx; min-height:88rpx; line-height:1.4; margin:8rpx 0 0; padding:16rpx 0; text-align:left; }
 .status { color:#436d5e; font-size:24rpx; line-height:1.55; margin-top:12rpx; }
 .detail-card { margin-top:20rpx; }
 .detail-value { font-size:56rpx; color:#356f5d; font-variant-numeric:tabular-nums; }

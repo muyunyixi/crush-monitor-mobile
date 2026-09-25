@@ -18,9 +18,11 @@
       <view class="summary" bindtap="showOverview"><view class="summary-item"><text>好感信号</text><text class="number">{{affinity}}</text><text class="unit">/100</text></view><view class="summary-item"><text>我的发挥</text><text class="number">{{quality}}</text><text class="unit">{{qualityCount}} 条</text></view><view class="summary-action">下一步 · {{action}}　›</view></view>
       <view wx:if="{{charms.length}}" class="charm-strip"><text wx:for="{{charms}}" wx:key="key" class="charm" data-key="{{item.key}}" bindtap="showCharm">{{item.label}}</text></view>
       <textarea class="editor" value="{{draft}}" bindinput="onDraft" bindblur="onDraftBlur" placeholder="长按粘贴多条聊天，或识字后在这里校对角色与正文" maxlength="-1" auto-height="true" cursor-spacing="20" />
+      <view wx:if="{{hasDraft}}" class="review-hint">请逐条核对发言人和消息边界。待确认的行改成“我：”或“对方：”；分析前会先导入校对后的文字。</view>
       <button class="scope-button" disabled="{{busy}}" bindtap="chooseAnalysisScope">分析范围 · {{scopeLabel}}　›</button>
       <view class="actions"><button class="secondary" disabled="{{busy}}" bindtap="chooseScreenshot">截图识字</button><button class="primary" loading="{{busy}}" disabled="{{busy || !canAnalyze}}" bindtap="runAnalysis">{{canAnalyze ? '分析新增' : '已分析'}}</button></view>
       <button wx:if="{{tasks.length}}" class="task-retry" bindtap="retryTaskQuery">继续查询未完成的识字任务（{{tasks.length}}）</button>
+      <button wx:if="{{failedScreenshotCount}}" class="task-retry" disabled="{{busy}}" bindtap="retryFailedScreenshots">重试失败截图（{{failedScreenshotCount}}）</button>
       <view class="save-state">{{hasDraft ? '草稿自动保存在本机' : analysisStatus}}　{{scopeNote}}</view>
       <view wx:if="{{status}}" class="status">{{status}}</view>
     </view>

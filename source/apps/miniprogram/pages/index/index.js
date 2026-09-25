@@ -37,7 +37,7 @@ Page({
   onHide() { if (this.state) this.flush(); },
   flush() { try { store.save(this.state); return true; } catch { this.setData({ status:'本机保存失败，请保留当前页面并腾出空间。' }); return false; } },
   render(page=this.data.page) { const previous={ busy:this.data.busy, status:this.data.status, detail:this.data.detail, exportMode:this.data.exportMode, includeChat:this.data.includeChat, includeAnalysis:this.data.includeAnalysis, anonymous:this.data.anonymous, historyTop:this.data.historyTop||0, scrollTo:this.data.scrollTo||'', showReturnAnchor:!!this.data.showReturnAnchor, highlightId:this.data.highlightId||'' };
-    this.setData({ ...display(this.state,page), ...previous }); },
+    const c=store.active(this.state);this.setData({ ...display(this.state,page), ...previous, failedScreenshotCount:this.failedScreenshots?.[c.id]?.length||0 }); },
   commit(next, page) { try { store.save(next); this.state=next; this.render(page); return true; } catch { this.setData({status:'本机保存失败，内容仍留在输入框；请腾出空间后重试。'}); return false; } },
   clearAnchor() { this.detailOrigin=null;this.historyScrollTop=0;clearTimeout(this.highlightTimer);this.setData({historyTop:0,scrollTo:'',showReturnAnchor:false,highlightId:''}); },
   openList() { this.clearAnchor();this.render('list'); },
@@ -134,27 +134,54 @@ Page({
   async chooseScreenshot() {
     if(this.data.busy)return;
     let files;try{const result=await new Promise((resolve,reject)=>wx.chooseMedia({count:4,mediaType:['image'],sourceType:['album'],success:resolve,fail:reject}));files=result.tempFiles||[];}catch{return;}
-    const conversationId=this.state.activeId;this.setData({busy:true,status:`准备识别 ${files.length} 张截图…`});let completed=0;
-    for(let i=0;i<files.length;i++) {
-      if(files[i].size>4*1024*1024){this.setData({status:`第 ${i+1} 张超过 4 MB，已跳过；此前结果已保留。`});continue;}
+    if(files.length)await this.processScreenshots(files.map((file,index)=>({file,index:index+1})),this.state.activeId);
+  },
+  async retryFailedScreenshots() {
+    if(this.data.busy)return;
+    const conversationId=this.state.activeId,items=this.failedScreenshots?.[conversationId]||[];
+    if(!items.length)return;
+    this.failedScreenshots[conversationId]=[];
+    await this.processScreenshots(items,conversationId);
+  },
+  async processScreenshots(items,conversationId) {
+    this.setData({busy:true,status:`准备识别 ${items.length} 张截图…`});let completed=0,pending=0;
+    const failures=[];
+    for(const {file,index} of items) {
+      if(file.size>4*1024*1024){failures.push({index,reason:'超过 4 MB，请压缩后重新选择'});continue;}
       let task;
       try{
-        const info=await new Promise((resolve,reject)=>wx.getImageInfo({src:files[i].tempFilePath,success:resolve,fail:reject}));
-        const code=await api.login();const uploaded=await api.upload(files[i].tempFilePath,code);
-        task={ jobId:uploaded.jobId,jobToken:uploaded.jobToken||'',conversationId,imageIndex:i,batchId:store.uid(),status:'waiting',width:info.width,height:info.height,createdAt:Date.now() };
-        if(!this.commit(store.update(this.state,conversationId,c=>({ ...c,tasks:[...(c.tasks||[]),task] }))))break;
-        this.setData({status:`第 ${i+1} / ${files.length} 张正在识字…`});await this.finishTask(task);completed++;
-      }catch(error){if(error.terminal&&task)this.removeTask(conversationId,task.jobId);this.setData({status:`第 ${i+1} 张失败：${error.message||error.errMsg||'网络错误'}。已完成 ${completed} 张；其余继续处理。`});}
+        const info=await new Promise((resolve,reject)=>wx.getImageInfo({src:file.tempFilePath,success:resolve,fail:reject}));
+        const code=await api.login();const uploaded=await api.upload(file.tempFilePath,code);
+        task={ jobId:uploaded.jobId,jobToken:uploaded.jobToken||'',conversationId,imageIndex:index-1,batchId:store.uid(),status:'waiting',width:info.width,height:info.height,createdAt:Date.now() };
+        if(!this.commit(store.update(this.state,conversationId,c=>({ ...c,tasks:[...(c.tasks||[]),task] }))))throw new Error('本机存储失败，请腾出空间后重试');
+        this.setData({status:`第 ${index} 张正在识字…`});await this.finishTask(task);completed++;
+      }catch(error){
+        if(task&&!error.terminal&&this.state.conversations.find(c=>c.id===conversationId)?.tasks?.some(t=>t.jobId===task.jobId)){pending++;continue;}
+        if(error.terminal&&task)this.removeTask(conversationId,task.jobId);
+        failures.push({file,index,reason:error.message||error.errMsg||'网络错误'});
+      }
     }
-    this.setData({busy:false,status:`已完成 ${completed} / ${files.length} 张；请在文字区校对后分析。`});
+    this.failedScreenshots=this.failedScreenshots||{};
+    this.failedScreenshots[conversationId]=[...(this.failedScreenshots[conversationId]||[]),...failures.filter(item=>item.file)];
+    if(this.state.activeId===conversationId)this.setData({busy:false,failedScreenshotCount:this.failedScreenshots[conversationId].length,
+      status:`已完成 ${completed} / ${items.length} 张${pending?`，${pending} 张仍在查询`:''}${failures.length?`；失败：${failures.map(f=>`第 ${f.index} 张${f.reason}`).join('；')}`:''}。${failures.length?'可重试失败项或重新选图。':'请在文字区校对后分析。'}`});
+    else this.setData({busy:false});
   },
   async finishTask(task) {
+    this.taskLocks=this.taskLocks||new Map();
+    if(this.taskLocks.has(task.jobId))return this.taskLocks.get(task.jobId);
+    const work=this.finishTaskOnce(task).finally(()=>this.taskLocks.delete(task.jobId));
+    this.taskLocks.set(task.jobId,work);return work;
+  },
+  async finishTaskOnce(task) {
     const result=await api.poll(task);let text='';let title='';let uncertain=0;
     try{if(!task.width||!task.height)throw new Error('旧任务缺少截图尺寸');const parsed=parseScreenshot(result.items,task.width,task.height);text=parsed.text;title=parsed.title;uncertain=parsed.uncertain;}catch{ text=(result.lines||result.items?.map(item=>item.text)||[]).map(line=>`待确认：${line}`).join('\n');uncertain=(result.lines||result.items||[]).length; }
-    const current=this.state.conversations.find(c=>c.id===task.conversationId);if(!current)return;
+    if(!text.trim()){const error=new Error('没有识别出聊天文字，请重新选择清晰截图');error.terminal=true;throw error;}
+    const current=this.state.conversations.find(c=>c.id===task.conversationId);if(!current?.tasks?.some(t=>t.jobId===task.jobId))return;
     const next=store.update(this.state,task.conversationId,c=>({ ...c,title:c.title==='新的对话'&&title?title:c.title,
       draft:[c.draft.trim(),text.trim()].filter(Boolean).join('\n'),tasks:(c.tasks||[]).filter(x=>x.jobId!==task.jobId) }));
-    this.commit(next);this.setData({status:uncertain?`识字完成；${uncertain} 行待确认。`:'识字完成，请核对文字与发言人。'});
+    if(!this.commit(next))throw new Error('本机存储失败，识字结果没有归档');
+    if(this.state.activeId===task.conversationId)this.setData({status:uncertain?`识字完成；${uncertain} 行待确认。`:'识字完成，请核对文字与发言人。'});
   },
   removeTask(conversationId,jobId) { this.commit(store.update(this.state,conversationId,c=>({ ...c,tasks:(c.tasks||[]).filter(t=>t.jobId!==jobId) }))); },
   async resumeTasks() { if(!this.state||this.resuming)return;this.resuming=true;
