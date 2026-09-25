@@ -4,6 +4,7 @@ compatibility_date = "2026-09-20"
 keep_vars = true
 [vars]
 ALLOWED_ORIGIN = "https://muyunyixi.github.io"
+MINI_ANALYSIS_DAILY_LIMIT = "10"
 
 [[durable_objects.bindings]]
 name = "USAGE_LIMITER"

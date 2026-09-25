@@ -41,6 +41,17 @@ async function wechatJson(url: string, options?: RequestInit): Promise<WechatRes
   return (await response.json()) as WechatResult;
 }
 
+export async function verifyMiniLogin(code: string, env: MiniOcrEnv): Promise<string | null> {
+  if (!env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET || !/^[\w-]{5,256}$/.test(code)) return null;
+  const loginUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
+  loginUrl.searchParams.set('appid', env.WECHAT_APP_ID);
+  loginUrl.searchParams.set('secret', env.WECHAT_APP_SECRET);
+  loginUrl.searchParams.set('js_code', code);
+  loginUrl.searchParams.set('grant_type', 'authorization_code');
+  const login = await wechatJson(loginUrl.toString());
+  return login.openid || null;
+}
+
 async function getToken(appid: string, secret: string) {
   if (tokenCache && Date.now() < tokenCache.expires) return tokenCache.token;
   const url = new URL('https://api.weixin.qq.com/cgi-bin/token');
@@ -76,16 +87,11 @@ export async function handleMiniOcr(request: Request, env: MiniOcrEnv, reserve: 
 
   let stage = 'login';
   try {
-    const loginUrl = new URL('https://api.weixin.qq.com/sns/jscode2session');
-    loginUrl.searchParams.set('appid', env.WECHAT_APP_ID);
-    loginUrl.searchParams.set('secret', env.WECHAT_APP_SECRET);
-    loginUrl.searchParams.set('js_code', loginCode);
-    loginUrl.searchParams.set('grant_type', 'authorization_code');
-    const login = await wechatJson(loginUrl.toString());
-    if (!login.openid) return failure('小程序登录已过期，请重试。', 401);
+    const openid = await verifyMiniLogin(loginCode, env);
+    if (!openid) return failure('小程序登录已过期，请重试。', 401);
 
     stage = 'quota';
-    const quota = await reserve(login.openid);
+    const quota = await reserve(openid);
     if (quota.unavailable) return failure('识字额度服务暂时不可用。', 503);
     if (!quota.allowed) return failure('今日截图识字次数已用完，请明天再试。', 429);
 
