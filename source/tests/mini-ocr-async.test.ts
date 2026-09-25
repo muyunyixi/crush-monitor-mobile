@@ -54,5 +54,38 @@ test('asynchronous OCR upload returns promptly, then exposes the completed resul
     assert.equal(job.status, 200);
     assert.equal(job.result.items[0].itemcoord.x, 30);
     assert.deepEqual(job.result.items[0].itemcoord, { x: 30, y: 200, width: 80, height: 20 });
+
+    const newForm = new FormData();
+    newForm.append('loginCode', 'another-code');
+    newForm.append('taskVersion', '2');
+    newForm.append('image', new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])], 'chat.png'));
+    const newer = await worker.fetch(new Request('https://example.com/api/mini/ocr-async', {
+      method: 'POST', body: newForm,
+    }), env, { waitUntil: promise => { tasks.push(promise); } });
+    const { jobId: newerId, jobToken } = await newer.json() as { jobId: string; jobToken: string };
+    await Promise.all(tasks);
+    const address = `https://example.com/api/mini/ocr-job?id=${newerId}`;
+    assert.equal((await worker.fetch(new Request(address), env)).status, 403);
+    assert.equal((await worker.fetch(new Request(address, { headers: { 'X-Ocr-Task-Token': jobToken } }), env)).status, 200);
   } finally { globalThis.fetch = original; }
+});
+test('mini quota reports authenticated remaining uses without consuming a batch', async () => {
+  const original=globalThis.fetch;
+  globalThis.fetch=async input=>String(input).includes('jscode2session')?Response.json({openid:'quota-user'}):Response.json({}, {status:404});
+  const values=new Map<string,unknown>();const limiter=new UsageLimiter({storage:{
+    get:async<T>(key:string)=>values.get(key) as T|undefined,
+    put:async(key:string,value:unknown)=>{values.set(key,value);},
+  }});
+  const env={WECHAT_APP_ID:'wx-test',WECHAT_APP_SECRET:'private',TYPESAFE_API_KEY:'model-key',MINI_ANALYSIS_DAILY_LIMIT:'3',ALLOWED_ORIGIN:'https://example.com',
+    USAGE_LIMITER:{idFromName:(name:string)=>name,get:()=>({fetch:(request:Request)=>limiter.fetch(request)})}} satisfies WorkerEnv;
+  try {
+    const query=()=>worker.fetch(new Request('https://example.com/api/mini/quota',{method:'POST',body:JSON.stringify({loginCode:'valid-code'})}),env);
+    const first=await query();assert.equal(first.status,200);assert.equal(first.headers.get('Cache-Control'),'no-store');
+    assert.equal((await first.json() as {remaining:number}).remaining,3);
+    assert.equal((await (await query()).json() as {remaining:number}).remaining,3);
+    const day=new Date().toISOString().slice(0,10);
+    await limiter.fetch(new Request('https://usage.internal/reserve',{method:'POST',body:JSON.stringify({date:day,runId:'example-run',limit:3})}));
+    assert.equal((await (await query()).json() as {remaining:number}).remaining,2);
+    assert.equal((await worker.fetch(new Request('https://example.com/api/mini/quota',{method:'POST',body:'{}'}),env)).status,401);
+  } finally {globalThis.fetch=original;}
 });

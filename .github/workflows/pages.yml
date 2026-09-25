@@ -21,6 +21,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - run: npm ci
+        working-directory: source
+      - run: npm test
+        working-directory: source
+      - run: npm run build
+        working-directory: source
       - name: Deploy Worker and quota storage
         id: deploy
         uses: cloudflare/wrangler-action@v4
@@ -38,15 +49,11 @@ jobs:
           curl --fail --silent --show-error \
             -H "Origin: https://muyunyixi.github.io" \
             "$WORKER_ENDPOINT/health"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: source/package-lock.json
-      - run: npm ci
-        working-directory: source
-      - run: node --import tsx --test tests/*.test.ts
-        working-directory: source
+      - name: Verify web and mini program API contracts
+        env:
+          WEB_WORKER_ENDPOINT: ${{ vars.PUBLIC_WORKER_URL || steps.deploy.outputs.deployment-url }}
+          MINI_WORKER_ENDPOINT: https://crush-monitor-mobile-api.muyunyixi.cloud
+        run: node source/scripts/verify-worker.mjs "$WEB_WORKER_ENDPOINT" "$MINI_WORKER_ENDPOINT"
       - name: Build with deployed Worker endpoint
         env:
           VITE_ANALYSIS_ENDPOINT: ${{ vars.PUBLIC_WORKER_URL || steps.deploy.outputs.deployment-url }}
