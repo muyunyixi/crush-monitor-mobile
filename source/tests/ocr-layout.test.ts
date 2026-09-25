@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chatLinesFromLayout, cleanChatTitle } from "../src/ocr-layout";
+import { chatLinesFromLayout, cleanChatTitle } from "../apps/web/src/ocr-layout";
 
 test("截图版面仅保留左右对话并按方向标记双方", () => {
   const result = chatLinesFromLayout(

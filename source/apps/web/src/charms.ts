@@ -1,4 +1,4 @@
-import type { Message } from "../shared/types";
+import type { Message } from "../../../shared/types";
 
 export type ConversationCharm = {
   key: string;

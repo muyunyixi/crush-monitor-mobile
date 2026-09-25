@@ -1,6 +1,6 @@
 import { APIError } from "@typesafe-ai/sdk";
 import { analyze, requestSchema } from "../server/analysis";
-import { handleMiniOcr } from "./mini-ocr";
+import { handleMiniOcr, verifyMiniLogin } from "./mini-ocr";
 
 type DurableStorage = {
   get<T>(key: string): Promise<T | undefined>;
@@ -19,10 +19,11 @@ export type WorkerEnv = {
   TYPESAFE_API_KEY?: string;
   WECHAT_APP_ID?: string;
   WECHAT_APP_SECRET?: string;
+  MINI_ANALYSIS_DAILY_LIMIT?: string;
   USAGE_LIMITER?: DurableNamespace;
 };
 type UsageRecord = { date: string; runIds: string[] };
-type OcrJob = { expires: number; done: boolean; status?: number; body?: unknown };
+type OcrJob = { expires: number; done: boolean; tokenHash?: string; status?: number; body?: unknown };
 
 const FREE_DAILY_LIMIT = 10;
 
@@ -32,16 +33,18 @@ export class UsageLimiter {
   async alarm() { await this.state.storage.delete?.("ocrJob"); }
 
   async fetch(request: Request): Promise<Response> {
-    const { date, runId, action, jobStatus, jobBody } = (await request.json()) as {
+    const { date, runId, action, jobStatus, jobBody, tokenHash, limit: requestedLimit } = (await request.json()) as {
       date?: string;
       runId?: string;
       action?: string;
       jobStatus?: number;
       jobBody?: unknown;
+      tokenHash?: string;
+      limit?: number;
     };
     if (action === "ocr-start") {
       if (!this.state.storage.setAlarm) return Response.json({ error: "OCR job alarms unavailable" }, { status: 503 });
-      await this.state.storage.put("ocrJob", { expires: Date.now() + 10 * 60_000, done: false } satisfies OcrJob);
+      await this.state.storage.put("ocrJob", { expires: Date.now() + 10 * 60_000, done: false, tokenHash } satisfies OcrJob);
       await this.state.storage.setAlarm(Date.now() + 10 * 60_000);
       return Response.json({ ok: true });
     }
@@ -54,26 +57,28 @@ export class UsageLimiter {
     if (action === "ocr-result") {
       const job = await this.state.storage.get<OcrJob>("ocrJob");
       if (!job || job.expires < Date.now()) return Response.json({ error: "识字结果已过期，请重新上传。" }, { status: 410 });
+      if (job.tokenHash && tokenHash !== job.tokenHash) return Response.json({ error: "无权查询此任务。" }, { status: 403 });
       return Response.json(job.done ? { done: true, status: job.status, result: job.body } : { done: false },
         { headers: { "Cache-Control": "no-store" } });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date || ""))
       return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
 
+    const limit = Number.isInteger(requestedLimit) && requestedLimit! >= 1 && requestedLimit! <= 100 ? requestedLimit! : FREE_DAILY_LIMIT;
     let usage = await this.state.storage.get<UsageRecord>("usage");
     if (!usage || usage.date !== date) usage = { date: date!, runIds: [] };
     if (action === "status")
-      return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
+      return Response.json({ allowed: true, remaining: Math.max(0, limit - usage.runIds.length) });
     if (!runId || runId.length > 128)
       return Response.json({ allowed: false, remaining: 0 }, { status: 400 });
     if (usage.runIds.includes(runId))
-      return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
-    if (usage.runIds.length >= FREE_DAILY_LIMIT)
+      return Response.json({ allowed: true, remaining: Math.max(0, limit - usage.runIds.length) });
+    if (usage.runIds.length >= limit)
       return Response.json({ allowed: false, remaining: 0 }, { status: 429 });
 
     usage.runIds.push(runId);
     await this.state.storage.put("usage", usage);
-    return Response.json({ allowed: true, remaining: FREE_DAILY_LIMIT - usage.runIds.length });
+    return Response.json({ allowed: true, remaining: Math.max(0, limit - usage.runIds.length) });
   }
 }
 
@@ -142,6 +147,58 @@ export default {
     // read, store or forward the uploaded image; no OCR quota is consumed.
     if (request.method === "POST" && url.pathname === "/api/mini/upload-check")
       return Response.json({ ok: true, stage: "worker-reached" }, { headers: { "Cache-Control": "no-store" } });
+    if (request.method === "POST" && url.pathname === "/api/mini/quota") {
+      const limit = Number(env.MINI_ANALYSIS_DAILY_LIMIT);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !env.USAGE_LIMITER || !env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET || !env.TYPESAFE_API_KEY)
+        return Response.json({ error: "小程序分析服务尚未配置。" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+      let loginCode: unknown;
+      try { loginCode = (await request.json() as {loginCode?:unknown}).loginCode; }
+      catch { return Response.json({ error: "请求格式错误。" }, { status: 400 }); }
+      if (typeof loginCode !== 'string' || !/^[\w-]{5,256}$/.test(loginCode)) return Response.json({ error: "小程序登录信息缺失。" }, { status: 401 });
+      let openid: string | null;
+      try { openid = await verifyMiniLogin(loginCode, env); }
+      catch { return Response.json({ error: "微信身份验证暂时失败。" }, { status: 502 }); }
+      if (!openid) return Response.json({ error: "小程序登录已过期，请重试。" }, { status: 401 });
+      const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`minianalysis:${await sha256(openid)}`));
+      const date = new Date().toISOString().slice(0, 10);
+      const response = await stub.fetch(new Request("https://usage.internal/status", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, action: "status", limit }) }));
+      if (!response.ok) return Response.json({ error: "次数服务暂时不可用。" }, { status: 503 });
+      const data = await response.json() as {remaining?:number};
+      return Response.json({remaining:Math.max(0,Number(data.remaining)||0),limit,date}, {headers:{"Cache-Control":"no-store"}});
+    }
+    if (request.method === "POST" && url.pathname === "/api/mini/analyze") {
+      const miniLimit = Number(env.MINI_ANALYSIS_DAILY_LIMIT);
+      if (!Number.isInteger(miniLimit) || miniLimit < 1 || miniLimit > 100)
+        return Response.json({ error: "小程序分析额度尚未配置。" }, { status: 503 });
+      if (!env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET || !env.TYPESAFE_API_KEY)
+        return Response.json({ error: "小程序分析服务尚未配置。" }, { status: 503 });
+      let raw: string;
+      try { raw = await request.text(); } catch { return Response.json({ error: "请求读取失败。" }, { status: 400 }); }
+      if (raw.length > 200000) return Response.json({ error: "聊天过长。" }, { status: 413 });
+      let payload: unknown;
+      try { payload = JSON.parse(raw); } catch { return Response.json({ error: "请求不是有效 JSON。" }, { status: 400 }); }
+      const parsed = requestSchema.safeParse(payload && typeof payload === 'object' && 'job' in payload ? (payload as { job: unknown }).job : null);
+      const loginCode = payload && typeof payload === 'object' && 'loginCode' in payload ? (payload as { loginCode?: unknown }).loginCode : null;
+      const runId = payload && typeof payload === 'object' && 'runId' in payload ? (payload as { runId?: unknown }).runId : null;
+      if (!parsed.success || typeof loginCode !== 'string' || typeof runId !== 'string' || !/^[\w-]{8,128}$/.test(runId))
+        return Response.json({ error: "分析请求格式不正确。" }, { status: 400 });
+      let openid: string | null;
+      try { openid = await verifyMiniLogin(loginCode, env); }
+      catch { return Response.json({ error: "微信身份验证暂时失败。" }, { status: 502 }); }
+      if (!openid) return Response.json({ error: "小程序登录已过期，请重试。" }, { status: 401 });
+      const userHash = await sha256(openid);
+      if (!env.USAGE_LIMITER) return Response.json({ error: "次数服务尚未部署。" }, { status: 503 });
+      const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`minianalysis:${userHash}`));
+      const quota = await stub.fetch(new Request("https://usage.internal/reserve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: new Date().toISOString().slice(0, 10),
+          runId: await sha256(runId + JSON.stringify({ revision: parsed.data.revision, relation: parsed.data.relation, messages: parsed.data.messages })), limit: miniLimit }),
+      }));
+      if (!quota.ok) return Response.json({ error: quota.status === 429 ? "今日分析次数已用完。" : "次数服务暂时不可用。" }, { status: quota.status === 429 ? 429 : 503 });
+      try { return Response.json(await analyze(parsed.data, request.signal, env.TYPESAFE_API_KEY), { headers: { "Cache-Control": "no-store" } }); }
+      catch { return Response.json({ error: "模型分析暂时失败，请稍后重试。" }, { status: 502 }); }
+    }
     if (request.method === "POST" && url.pathname === "/api/mini/ocr-async") {
       if (!env.USAGE_LIMITER || !context) return Response.json({ error: "异步识字服务尚未部署。" }, { status: 503 });
       if (!env.WECHAT_APP_ID || !env.WECHAT_APP_SECRET)
@@ -157,8 +214,12 @@ export default {
       if (!(image instanceof File) || image.size > 4 * 1024 * 1024 || image.size < 8)
         return Response.json({ error: "请选择小于 4 MB 的截图。" }, { status: 400 });
       const jobId = crypto.randomUUID();
+      const jobToken = crypto.randomUUID();
       const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`miniocrjob:${jobId}`));
-      const initialized = await stub.fetch(jobRequest("ocr-start"));
+      // v0.4.2 callers do not send taskVersion; keep their existing polling contract.
+      const initialized = await stub.fetch(jobRequest("ocr-start", {
+        tokenHash: form.get("taskVersion") === "2" ? await sha256(jobToken) : undefined,
+      }));
       if (!initialized.ok) return Response.json({ error: "无法创建识字任务。" }, { status: 503 });
       const prepared = new Request(request.url, { method: "POST", body: form });
       context.waitUntil((async () => {
@@ -171,14 +232,15 @@ export default {
         } catch { /* Public result contains no internal error details or credentials. */ }
         await stub.fetch(jobRequest("ocr-finish", { jobStatus: status, jobBody: body }));
       })());
-      return Response.json({ jobId }, { headers: { "Cache-Control": "no-store" } });
+      return Response.json({ jobId, jobToken }, { headers: { "Cache-Control": "no-store" } });
     }
     if (request.method === "GET" && url.pathname === "/api/mini/ocr-job") {
       const jobId = url.searchParams.get("id") || "";
       if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(jobId)) return Response.json({}, { status: 400 });
       if (!env.USAGE_LIMITER) return Response.json({}, { status: 503 });
       const stub = env.USAGE_LIMITER.get(env.USAGE_LIMITER.idFromName(`miniocrjob:${jobId}`));
-      return stub.fetch(jobRequest("ocr-result"));
+      const token = request.headers.get("X-Ocr-Task-Token") || "";
+      return stub.fetch(jobRequest("ocr-result", { tokenHash: token ? await sha256(token) : "" }));
     }
     // Mini Program requests have no browser Origin. A one-time wx.login code is
     // verified against our AppID before the OCR API is called.

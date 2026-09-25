@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { UsageLimiter } from "../worker/index";
-import { requestAnalysis, requestQuota, validateConnection } from "../src/transport";
+import { requestAnalysis, requestQuota, validateConnection } from "../apps/web/src/transport";
 import type { AnalysisRequest } from "../shared/types";
 
 const origin = "https://muyunyixi.github.io";

@@ -1,0 +1,10 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "好感监控器",
+    "navigationBarBackgroundColor": "#f5f5f2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f5f5f2"
+  },
+  "style": "v2"
+}
