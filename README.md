@@ -39,7 +39,7 @@ npm run dev
 
 ## 两端与后端
 
-网页调用 `/api/analyze` 和 `/api/quota`；小程序正式版开发分支调用 `/api/mini/analyze` 和异步 OCR。Worker 保留 v0.4.2 旧 OCR 查询方式。网页分析按原有公网 IP 额度运行，小程序 OCR 按微信用户额度运行；小程序正式分析额度尚未定版，生产环境缺少 `MINI_ANALYSIS_DAILY_LIMIT` 时会返回配置错误。发布 Worker 时必须检查两端的兼容结果；同一个生产 Worker 只由本仓库发布。
+网页调用 `/api/analyze` 和 `/api/quota`；小程序正式版开发分支调用 `/api/mini/analyze` 和异步 OCR。Worker 保留 v0.4.2 旧 OCR 查询方式。网页分析按原有公网 IP 额度运行，小程序 OCR 按微信用户额度运行；小程序分析按每个微信用户每天 10 次独立计算，额度写在 `source/wrangler.toml`，随 Worker 发布。发布 Worker 时必须检查两端的兼容结果；同一个生产 Worker 只由本仓库发布。
 
 `main` 的网页或后端变动通过 GitHub Actions 测试并部署 Worker 和网页；只修改小程序会运行小程序检查，不会覆盖生产后端。开发分支可持续提交；正式合并与部署前仍需完成微信开发者工具、真机和线上兼容验收。
 
